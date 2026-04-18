@@ -1,0 +1,17 @@
+{
+  "name": "fluxocerto-360.v1",
+  "version": "1.0.0",
+  "description": "Runner scripts for FluxoCerto 360 app in ./fluxocerto-360",
+  "main": "index.js",
+  "scripts": {
+    "install:app": "npm --prefix ./fluxocerto-360 install --legacy-peer-deps",
+    "dev": "npm --prefix ./fluxocerto-360 run dev",
+    "build": "npm --prefix ./fluxocerto-360 run build",
+    "check": "npm --prefix ./fluxocerto-360 run check",
+    "preview": "npm --prefix ./fluxocerto-360 run preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}
