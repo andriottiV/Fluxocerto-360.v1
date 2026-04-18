@@ -38,6 +38,22 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const USER_DATA_KEY_PREFIX = "fc360:data:";
 
+type UserScopedData = {
+  accounts: Account[];
+  pots: Pot[];
+  services: Service[];
+  clients: Client[];
+  transactions: Transaction[];
+  paymentAccounts: PaymentAccount[];
+  insights: Insight[];
+  notifications: Notification[];
+  achievements: Achievement[];
+  salesItems: SalesItem[];
+  costs: Cost[];
+  paymentFeeSettings: PaymentFeeSetting[];
+  adjustmentAccounts: AdjustmentAccount[];
+};
+
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -64,7 +80,7 @@ function cloneData<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function createEmptyData() {
+function createEmptyData(): UserScopedData {
   return {
     accounts: cloneData(ACCOUNTS).map((account) => ({
       ...account,
@@ -88,8 +104,6 @@ function createEmptyData() {
     adjustmentAccounts: [] as AdjustmentAccount[],
   };
 }
-
-type UserScopedData = ReturnType<typeof createEmptyData>;
 
 function attachOwner<T extends { ownerId?: string }>(items: T[], ownerId: string) {
   return items

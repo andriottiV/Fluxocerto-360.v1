@@ -1,0 +1,24 @@
+.git
+.gitignore
+.DS_Store
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local/dev artifacts
+public
+fluxocerto-360/.manus-logs
+fluxocerto-360/.webdev
+fluxocerto-360/dist
+fluxocerto-360/node_modules
+fluxocerto-360/client/node_modules
+fluxocerto-360/client/dist
+fluxocerto-360/client/.vite
+fluxocerto-360/client/.cache
+fluxocerto-360/.env
+fluxocerto-360/.env.local
+fluxocerto-360/client/.env
+fluxocerto-360/client/.env.local
+

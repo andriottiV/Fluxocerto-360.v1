@@ -123,18 +123,18 @@ function writeOnboardingCompleted(userId: string, completed: boolean) {
 }
 
 export function bootstrapAuthUsers() {
-  const users = readUsers().map((user) => {
+  const users: StoredAuthUser[] = readUsers().map((user) => {
     const access = roleAndStatusForEmail(user.email);
     if (access.role === "admin") {
-      return {
+      return coerceUserShape({
         ...user,
         role: "admin",
         status: user.status === "blocked" ? "blocked" : "active",
         approvedAt: user.approvedAt ?? nowIso(),
         approvedBy: user.approvedBy ?? "system",
-      };
+      });
     }
-    return user;
+    return coerceUserShape(user);
   });
   writeUsers(users);
 }

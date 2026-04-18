@@ -27,7 +27,7 @@ function topExpenseCategory(transactions: Transaction[]) {
       map.set(category, (map.get(category) ?? 0) + tx.amount);
     });
 
-  const [category = "outros"] = [...map.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const [category = "outros"] = Array.from(map.entries()).sort((a, b) => b[1] - a[1])[0] ?? [];
   return category;
 }
 

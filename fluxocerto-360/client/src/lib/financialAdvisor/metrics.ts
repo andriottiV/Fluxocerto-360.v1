@@ -138,7 +138,7 @@ export function calculateStrongestDays(transactions: Transaction[], count = 2) {
     totals.set(weekday, (totals.get(weekday) ?? 0) + signedAmount);
   });
 
-  return [...totals.entries()]
+  return Array.from(totals.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, count)
     .map(([weekday]) => WEEKDAYS_PT[weekday]);
@@ -155,7 +155,7 @@ export function calculateWeakestDays(transactions: Transaction[], count = 2) {
     totals.set(weekday, (totals.get(weekday) ?? 0) + signedAmount);
   });
 
-  return [...totals.entries()]
+  return Array.from(totals.entries())
     .sort((a, b) => a[1] - b[1])
     .slice(0, count)
     .map(([weekday]) => WEEKDAYS_PT[weekday]);
@@ -341,4 +341,3 @@ export function buildFinancialInsights(params: {
 
   return insights;
 }
-

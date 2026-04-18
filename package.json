@@ -4,9 +4,10 @@
   "description": "Runner scripts for FluxoCerto 360 app in ./fluxocerto-360",
   "main": "index.js",
   "scripts": {
-    "install:app": "npm --prefix ./fluxocerto-360 install --legacy-peer-deps",
+    "install:app": "npm --prefix ./fluxocerto-360 install --include=dev --legacy-peer-deps",
+    "start": "npm --prefix ./fluxocerto-360 run start",
     "dev": "npm --prefix ./fluxocerto-360 run dev",
-    "build": "npm --prefix ./fluxocerto-360 run build",
+    "build": "npm --prefix ./fluxocerto-360 install --include=dev --legacy-peer-deps && npm --prefix ./fluxocerto-360 run build",
     "check": "npm --prefix ./fluxocerto-360 run check",
     "preview": "npm --prefix ./fluxocerto-360 run preview"
   },

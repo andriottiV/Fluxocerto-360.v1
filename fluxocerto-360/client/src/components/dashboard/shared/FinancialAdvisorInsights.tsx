@@ -34,7 +34,7 @@ function buildLargestLeak(transactions: Transaction[]) {
       byCategory.set(category, (byCategory.get(category) ?? 0) + transaction.amount);
     });
 
-  const [category = "outros", amount = 0] = [...byCategory.entries()].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const [category = "outros", amount = 0] = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1])[0] ?? [];
   return { category, amount };
 }
 
@@ -141,4 +141,3 @@ export default function FinancialAdvisorInsights({
     </article>
   );
 }
-

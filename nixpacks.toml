@@ -1,0 +1,8 @@
+[phases.install]
+cmds = ["npm --prefix ./fluxocerto-360 install --legacy-peer-deps"]
+
+[phases.build]
+cmds = ["npm --prefix ./fluxocerto-360 run build"]
+
+[start]
+cmd = "npm --prefix ./fluxocerto-360 run start"
