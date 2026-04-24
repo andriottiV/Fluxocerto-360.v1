@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { useApp } from "@/contexts/AppContext";
 import SummaryCard from "@/components/dashboard/shared/SummaryCard";
 import { calculateTotals, isInCurrentMonth, parseDateSafe } from "@/lib/finance";
+import { PotType } from "@/lib/types";
 import type { DashboardIntelligence } from "@/lib/dashboardIntelligence";
 import { formatCurrency } from "@/lib/utils";
 
@@ -33,7 +34,7 @@ function areaPath(points: Array<{ x: number; y: number }>, baseY: number) {
 }
 
 export default function InicioModule({ userName, intelligence }: InicioModuleProps) {
-  const { pots, transactions } = useApp();
+  const { pots, transactions, potDistribution, achievements } = useApp();
 
   const monthTransactions = useMemo(
     () =>
@@ -47,9 +48,9 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
   const monthTotals = useMemo(() => calculateTotals(monthTransactions), [monthTransactions]);
 
   const [personalPot, businessPot, reservePot] = useMemo(() => {
-    const pf = pots.find((pot) => pot.name.toLowerCase().includes("pess"));
-    const pj = pots.find((pot) => pot.name.toLowerCase().includes("neg"));
-    const reserve = pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
+    const pf = pots.find((pot) => pot.type === PotType.PERSONAL) ?? pots.find((pot) => pot.name.toLowerCase().includes("pess"));
+    const pj = pots.find((pot) => pot.type === PotType.BUSINESS) ?? pots.find((pot) => pot.name.toLowerCase().includes("neg"));
+    const reserve = pots.find((pot) => pot.type === PotType.RESERVE) ?? pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
     return [pf, pj, reserve];
   }, [pots]);
 
@@ -135,17 +136,36 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     };
   }, [transactions]);
 
-  const potDistribution = useMemo(() => {
+  const potDistributionChart = useMemo(() => {
     const entries = [
-      { key: "pessoal", label: "Pessoal", value: personalPot?.balance ?? 0, color: "#38bdf8" },
-      { key: "negocio", label: "Negócio", value: businessPot?.balance ?? 0, color: "#22c55e" },
-      { key: "reserva", label: "Reserva", value: reservePot?.balance ?? 0, color: "#fbbf24" },
+      {
+        key: "pessoal",
+        label: "Pessoal",
+        percent: potDistribution.personal,
+        value: personalPot?.balance ?? 0,
+        goalValue: personalPot?.goalValue ?? personalPot?.limit ?? 0,
+        color: "#38bdf8",
+      },
+      {
+        key: "negocio",
+        label: "Negocio",
+        percent: potDistribution.business,
+        value: businessPot?.balance ?? 0,
+        goalValue: businessPot?.goalValue ?? businessPot?.limit ?? 0,
+        color: "#22c55e",
+      },
+      {
+        key: "reserva",
+        label: "Reserva",
+        percent: potDistribution.reserve,
+        value: reservePot?.balance ?? 0,
+        goalValue: reservePot?.goalValue ?? reservePot?.limit ?? 0,
+        color: "#fbbf24",
+      },
     ];
-    const total = entries.reduce((sum, entry) => sum + entry.value, 0);
-
     let cursor = 0;
     const stops = entries.map((entry) => {
-      const ratio = total > 0 ? entry.value / total : 1 / entries.length;
+      const ratio = entry.percent / 100;
       const start = cursor * 100;
       cursor += ratio;
       const end = cursor * 100;
@@ -153,11 +173,17 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     });
 
     return {
-      total,
       entries,
       gradient: `conic-gradient(${stops.join(", ")})`,
     };
-  }, [personalPot?.balance, businessPot?.balance, reservePot?.balance]);
+  }, [
+    businessPot?.balance,
+    personalPot?.balance,
+    potDistribution.business,
+    potDistribution.personal,
+    potDistribution.reserve,
+    reservePot?.balance,
+  ]);
 
   return (
     <>
@@ -175,6 +201,32 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
 
       <section className="fd-consultor-brief">
         <p>{consultorHint}</p>
+      </section>
+
+      <section className="fd-panel fd-glass">
+        <div className="fd-panel-head">
+          <h2>Suas conquistas</h2>
+          <p>Seu progresso no FluxoCerto 360</p>
+        </div>
+        <div className="fd-list">
+          {achievements.length === 0 ? (
+            <p className="fd-empty">Você ainda não desbloqueou conquistas.</p>
+          ) : (
+            achievements.slice(0, 6).map((achievement) => (
+              <div key={achievement.id} className="fd-list-row">
+                <div>
+                  <p>{achievement.title}</p>
+                  <small>{achievement.description}</small>
+                </div>
+                <strong>
+                  {achievement.unlockedAt
+                    ? new Date(achievement.unlockedAt).toLocaleDateString("pt-BR")
+                    : "Desbloqueada"}
+                </strong>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       <section className="fd-summary-v2-grid fd-summary-v2-grid-compact">
@@ -214,16 +266,46 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
         <article className="fd-panel fd-glass fd-pot-distribution-card fd-home-chart-card">
           <div className="fd-panel-head">
             <h2>Distribuicao de potes</h2>
-            <p>PF, PJ e Reserva</p>
+            <p>Percentuais configurados em Ajustes</p>
           </div>
           <div className="fd-donut-wrap">
-            <div className="fd-donut" style={{ background: potDistribution.gradient }} />
+            <div className="fd-donut" style={{ background: potDistributionChart.gradient }} />
             <div className="fd-donut-legend">
-              {potDistribution.entries.map((entry) => (
+              {potDistributionChart.entries.map((entry) => (
                 <div key={entry.key}>
                   <span className="dot" style={{ background: entry.color }} />
                   <p>{entry.label}</p>
+                  <small className="text-[0.7rem] text-[var(--fd-text-muted)]">{entry.percent.toFixed(2)}% da entrada</small>
                   <strong>{formatCurrency(entry.value)}</strong>
+                  {entry.goalValue > 0 ? (
+                    <>
+                      <small className="text-[0.7rem] text-[var(--fd-text-muted)]">
+                        Meta: {formatCurrency(entry.goalValue)}
+                      </small>
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 6,
+                          borderRadius: 999,
+                          background: "rgba(148,163,184,0.25)",
+                          overflow: "hidden",
+                          marginTop: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${Math.max(0, Math.min((entry.value / entry.goalValue) * 100, 100))}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background: entry.color,
+                          }}
+                        />
+                      </div>
+                      <small className="text-[0.7rem] text-[var(--fd-text-muted)]">
+                        {Math.max(0, Math.min((entry.value / entry.goalValue) * 100, 999)).toFixed(0)}% da meta
+                      </small>
+                    </>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -233,3 +315,4 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     </>
   );
 }
+

@@ -5,6 +5,7 @@
 
 // Enums
 export enum ScreenType {
+  LANDING = "scrLanding",
   LOGIN = "scrLogin",
   ONBOARDING = "scrOnboarding",
   DASHBOARD = "scrDashboard",
@@ -90,6 +91,8 @@ export interface Pot {
   type: PotType;
   name: string;
   balance: number;
+  percentage: number;
+  goalValue: number;
   limit?: number;
   icon: string;
   color: string;
@@ -133,6 +136,8 @@ export interface Transaction {
   potId?: string;
   accountTypeLink?: AccountTypeLink;
   paymentMethod?: PaymentMethod;
+  clientId?: string;
+  clientName?: string;
 }
 
 export type TransactionInput = Omit<Transaction, "id"> & { id?: string };
@@ -242,6 +247,27 @@ export interface AdjustmentAccount {
   cycleMonthKey: string;
 }
 
+export interface PotDistribution {
+  personal: number;
+  business: number;
+  reserve: number;
+}
+
+export type OnboardingUsageMode = "personal" | "business" | "both";
+export type OnboardingFinancialMode = "chaos" | "breakEven" | "surplus" | "growth";
+
+export interface OnboardingDebtInput {
+  name: string;
+  totalAmount: number;
+  monthlyPayment: number;
+}
+
+export interface OnboardingFixedExpenseInput {
+  name: string;
+  amount: number;
+  dueDate: string;
+}
+
 // Contexto Global
 export interface AppContextType {
   // Estado
@@ -270,6 +296,7 @@ export interface AppContextType {
   costs: Cost[];
   paymentFeeSettings: PaymentFeeSetting[];
   adjustmentAccounts: AdjustmentAccount[];
+  potDistribution: PotDistribution;
 
   // Ações
   addTransaction: (transaction: TransactionInput) => { ok: boolean; error?: string; data?: Transaction };
@@ -281,6 +308,15 @@ export interface AppContextType {
   addCost: (cost: Omit<Cost, "id"> & { id?: string }) => { ok: boolean; error?: string; data?: Cost };
   deleteCost: (costId: string) => void;
   setPaymentFeeSettings: (settings: PaymentFeeSetting[]) => void;
+  setPotDistribution: (distribution: PotDistribution) => void;
+  applyOnboardingUsageMode: (usageMode: OnboardingUsageMode) => void;
+  applyOnboardingIncome: (usageMode: OnboardingUsageMode, monthlyIncome: number) => void;
+  applyOnboardingFinancialMode: (financialMode: OnboardingFinancialMode) => void;
+  addOnboardingDebt: (debt: OnboardingDebtInput, usageMode: OnboardingUsageMode) => { ok: boolean; error?: string };
+  addOnboardingFixedExpense: (
+    expense: OnboardingFixedExpenseInput,
+    usageMode: OnboardingUsageMode
+  ) => { ok: boolean; error?: string };
   addAdjustmentAccount: (
     account: Omit<AdjustmentAccount, "id" | "status" | "cycleMonthKey">
   ) => { ok: boolean; error?: string; data?: AdjustmentAccount };
@@ -288,6 +324,7 @@ export interface AppContextType {
   deleteAdjustmentAccount: (accountId: string) => void;
   syncAdjustmentAccountsCycle: () => void;
   payAdjustmentAccount: (accountId: string) => { ok: boolean; error?: string; borrowedFromOtherPot?: boolean };
+  resetUserFinancialData: () => { ok: boolean; error?: string };
   addClient: (client: Client) => void;
   updateClient: (client: Client) => void;
   deleteClient: (clientId: string) => void;

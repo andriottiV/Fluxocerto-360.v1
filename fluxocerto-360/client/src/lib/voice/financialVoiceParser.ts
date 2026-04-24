@@ -13,14 +13,19 @@ export type ParsedVoiceCommand = {
   date: string;
   paymentMethod?: PaymentMethod;
   paymentLabel?: "Pix" | "Crédito" | "Débito" | "Dinheiro" | "Transferência" | "Boleto";
+  clientName?: string;
+  clientId?: string;
+  customerName?: string;
+  customerId?: string;
   areaHint: VoiceAreaHint;
   missingFields: string[];
   ambiguous: boolean;
   summary: string;
 };
 
-const INCOME_KEYWORDS = ["entrou", "recebi", "recebido", "ganhei", "entrada", "caiu"];
+const INCOME_KEYWORDS = ["entrou", "recebi", "recebeu", "recebido", "ganhei", "entrada", "caiu"];
 const EXPENSE_KEYWORDS = ["saiu", "saida", "gastei", "paguei", "despesa", "gasto", "comprei", "separei"];
+const INCOME_FORCE_TERMS = ["pagou", "recebeu", "recebi", "entrou", "caiu", "venda", "corte", "servico"];
 
 const CATEGORY_HINTS: Array<{ key: string; category: string }> = [
   { key: "gasolina", category: "transporte" },
@@ -33,7 +38,9 @@ const CATEGORY_HINTS: Array<{ key: string; category: string }> = [
   { key: "imposto", category: "impostos" },
   { key: "conta", category: "contas fixas" },
   { key: "reserva", category: "reserva" },
-  { key: "corte", category: "servico" },
+  { key: "corte", category: "servicos" },
+  { key: "servico", category: "servicos" },
+  { key: "venda", category: "servicos" },
 ];
 
 const SPELLING_REPLACEMENTS: Array<[RegExp, string]> = [
@@ -49,6 +56,40 @@ const SPELLING_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bentre os\b/g, "entrou"],
   [/\brecebiu\b/g, "recebi"],
 ];
+
+const CLIENT_STOP_WORDS = new Set([
+  "pix",
+  "dinheiro",
+  "debito",
+  "credito",
+  "cartao",
+  "transferencia",
+  "boleto",
+  "pessoal",
+  "negocio",
+  "reserva",
+  "hoje",
+  "ontem",
+  "amanha",
+  "no",
+  "na",
+  "em",
+  "com",
+  "para",
+  "pra",
+  "cliente",
+  "do",
+  "da",
+  "pagou",
+  "recebeu",
+  "recebi",
+  "fez",
+  "cortou",
+  "deu",
+  "r",
+  "real",
+  "reais",
+]);
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -74,6 +115,15 @@ function toSentenceCase(value: string) {
   return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}${/[.!?]$/.test(trimmed) ? "" : "."}`;
 }
 
+function toNameCase(value: string) {
+  return value
+    .split(" ")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
 function extractAmount(normalizedText: string) {
   const match = normalizedText.match(/(\d+[.,]?\d{0,2})/);
   if (!match?.[1]) return undefined;
@@ -86,10 +136,15 @@ function detectType(normalizedText: string) {
   const base = normalizeText(normalizedText);
   const hasIncome = INCOME_KEYWORDS.some((keyword) => base.includes(keyword));
   const hasExpense = EXPENSE_KEYWORDS.some((keyword) => base.includes(keyword));
+  const hasForcedIncomeTerm = INCOME_FORCE_TERMS.some((keyword) => base.includes(keyword));
+  const hasClientPaidPattern =
+    /\b(?:o\s+)?cliente\s+[a-z0-9\s]{2,}\s+pagou\b/.test(base) || /\b[a-z0-9]{2,}\s+pagou\b/.test(base);
 
   if (base.includes("separei") && base.includes("reserva")) {
     return TransactionType.EXPENSE;
   }
+  if (base.includes("paguei")) return TransactionType.EXPENSE;
+  if (hasForcedIncomeTerm || hasClientPaidPattern) return TransactionType.INCOME;
 
   if (hasIncome && !hasExpense) return TransactionType.INCOME;
   if (!hasIncome && hasExpense) return TransactionType.EXPENSE;
@@ -112,6 +167,12 @@ function detectCategory(normalizedText: string, type?: TransactionType.INCOME | 
   const base = normalizeText(normalizedText);
   const found = CATEGORY_HINTS.find((item) => base.includes(item.key))?.category;
   if (found) return found;
+  if (
+    type === TransactionType.INCOME &&
+    (base.includes("cliente") || base.includes("pagou") || base.includes("corte") || base.includes("servico"))
+  ) {
+    return "servicos";
+  }
   if (type === TransactionType.INCOME) return "nao_aplicavel";
   if (type === TransactionType.EXPENSE) return "outros";
   return undefined;
@@ -145,14 +206,70 @@ function extractSubject(normalizedText: string) {
   return subject;
 }
 
+function sanitizeClientCandidate(candidate: string) {
+  const cleaned = normalizeText(candidate);
+  if (!cleaned) return undefined;
+
+  const tokens = cleaned
+    .split(" ")
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const kept: string[] = [];
+  for (const token of tokens) {
+    if (CLIENT_STOP_WORDS.has(token) && kept.length > 0) break;
+    if (CLIENT_STOP_WORDS.has(token) && kept.length === 0) continue;
+    if (/^\d+$/.test(token)) continue;
+    kept.push(token);
+    if (kept.length >= 4) break;
+  }
+
+  if (kept.length === 0) return undefined;
+  const name = toNameCase(kept.join(" "));
+  return name.length >= 2 ? name : undefined;
+}
+
+function extractClientName(normalizedText: string) {
+  const base = normalizeText(normalizedText);
+  const patterns = [
+    /\b(?:o\s+)?cliente\s+([a-z0-9\s]+?)(?=\s+(?:pagou|recebeu|fez|cortou|deu|no|na|em|r|r\$|\d)|$)/,
+    /\b([a-z0-9]+(?:\s+[a-z0-9]+)?)\s+pagou\b/,
+    /\b(?:do|de|com)\s+(?:o\s+)?cliente\s+([a-z0-9\s]+)/,
+    /\bda\s+cliente\s+([a-z0-9\s]+)/,
+    /\bcliente\s+([a-z0-9\s]+)/,
+    /\brecebi\s+do\s+([a-z0-9\s]+)/,
+    /\brecebi\s+da\s+([a-z0-9\s]+)/,
+    /\bentrou\s+do\s+([a-z0-9\s]+)/,
+    /\bentrou\s+da\s+([a-z0-9\s]+)/,
+    /\b(?:recebi|entrou|ganhei|caiu)\b.*?\bdo\s+([a-z0-9\s]+)/,
+    /\b(?:recebi|entrou|ganhei|caiu)\b.*?\bda\s+([a-z0-9\s]+)/,
+  ];
+
+  for (const pattern of patterns) {
+    const matched = base.match(pattern)?.[1];
+    if (!matched) continue;
+    const sanitized = sanitizeClientCandidate(matched);
+    if (sanitized) return sanitized;
+  }
+
+  return undefined;
+}
+
 function buildDescription(params: {
   type?: TransactionType.INCOME | TransactionType.EXPENSE;
   paymentLabel?: ParsedVoiceCommand["paymentLabel"];
   subject: string;
+  amount?: number;
+  clientName?: string;
 }) {
-  const { type, paymentLabel, subject } = params;
+  const { type, paymentLabel, subject, amount, clientName } = params;
+  const amountLabel = amount ? `R$ ${amount.toFixed(2).replace(".", ",")}` : undefined;
+  const paymentLabelLower = paymentLabel ? paymentLabel.toLowerCase() : "";
 
   if (type === TransactionType.INCOME) {
+    if (clientName && amountLabel) {
+      return `Cliente ${clientName} pagou ${amountLabel}${paymentLabelLower ? ` no ${paymentLabelLower}` : ""}`;
+    }
     if (paymentLabel === "Pix") return "Recebimento via Pix";
     if (paymentLabel === "Dinheiro") return "Recebimento em dinheiro";
     if (paymentLabel === "Crédito") return "Recebimento via cartão de crédito";
@@ -202,7 +319,8 @@ export function parseFinancialVoiceCommand(text: string): ParsedVoiceCommand {
   const { paymentMethod, paymentLabel } = detectPayment(correctedRaw);
   const areaHint = detectArea(correctedRaw);
   const subject = extractSubject(correctedRaw);
-  const description = buildDescription({ type, paymentLabel, subject });
+  const clientName = extractClientName(correctedRaw);
+  const description = buildDescription({ type, paymentLabel, subject, amount, clientName });
   const correctedText = buildCorrectedDisplayText({
     correctedRaw,
     type,
@@ -231,6 +349,8 @@ export function parseFinancialVoiceCommand(text: string): ParsedVoiceCommand {
     date: todayIso(),
     paymentMethod,
     paymentLabel,
+    clientName,
+    customerName: clientName,
     areaHint,
     missingFields,
     ambiguous,

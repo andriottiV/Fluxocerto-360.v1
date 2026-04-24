@@ -72,7 +72,7 @@ export default function DashboardScreen() {
         onNavigate={setLocation as (path: DashboardRoutePath) => void}
         onLogout={() => {
           logout();
-          goScreen(ScreenType.LOGIN);
+          goScreen(ScreenType.LANDING);
         }}
       />
 

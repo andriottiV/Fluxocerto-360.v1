@@ -11,31 +11,33 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 // Telas
+import LandingScreen from "@/components/screens/LandingScreen";
 import LoginScreen from "@/components/screens/LoginScreen";
 import OnboardingScreen from "@/components/screens/OnboardingScreen";
 import DashboardScreen from "@/components/screens/DashboardScreen";
 import ClientsScreen from "@/components/screens/ClientsScreen";
 import AuthStatusScreen from "@/components/screens/AuthStatusScreen";
-import { isActive } from "@/lib/authz";
 
 function Router() {
-  const { currentScreen, user, logout } = useApp();
+  const { state, currentScreen, user, logout } = useApp();
 
-  if (currentScreen !== ScreenType.LOGIN && !user) {
-    return <LoginScreen />;
+  if (state.isLoading) {
+    return <div className="min-h-screen bg-[#020b08]" />;
   }
 
-  if (user && currentScreen !== ScreenType.LOGIN && !isActive(user)) {
-    if (user.status === "pending") {
-      return <AuthStatusScreen kind="pending" onLogout={logout} />;
-    }
+  if (!user && currentScreen !== ScreenType.LANDING && currentScreen !== ScreenType.LOGIN) {
+    return <LandingScreen />;
+  }
+
+  if (user && currentScreen !== ScreenType.LOGIN) {
     if (user.status === "blocked") {
       return <AuthStatusScreen kind="blocked" onLogout={logout} />;
     }
-    return <AuthStatusScreen kind="denied" onLogout={logout} />;
   }
 
   switch (currentScreen) {
+    case ScreenType.LANDING:
+      return <LandingScreen />;
     case ScreenType.LOGIN:
       return <LoginScreen />;
     case ScreenType.ONBOARDING:
@@ -45,7 +47,7 @@ function Router() {
     case ScreenType.CLIENTS:
       return <ClientsScreen />;
     default:
-      return <LoginScreen />;
+      return user ? <DashboardScreen /> : <LandingScreen />;
   }
 }
 

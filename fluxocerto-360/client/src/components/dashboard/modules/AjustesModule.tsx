@@ -1,14 +1,24 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+﻿import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { CreditCard, Plus, Settings2, Trash2, User, Wrench } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 import { useApp } from "@/contexts/AppContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
   AdjustmentAccount,
   AdjustmentAccountCategory,
   AdjustmentAccountPot,
   AdjustmentAccountType,
   PaymentFeeSetting,
+  PotDistribution,
 } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
@@ -36,6 +46,12 @@ const ACCOUNT_CATEGORIES: AdjustmentAccountCategory[] = [
   "outros",
 ];
 
+const POT_DISTRIBUTION_DEFAULT: PotDistribution = {
+  personal: 50,
+  business: 40,
+  reserve: 10,
+};
+
 function dayDiffFromToday(iso: string) {
   const target = new Date(iso);
   if (Number.isNaN(target.getTime())) return 999;
@@ -58,16 +74,27 @@ export default function AjustesModule() {
     deleteService,
     paymentFeeSettings,
     setPaymentFeeSettings,
+    potDistribution,
+    setPotDistribution,
     adjustmentAccounts,
     addAdjustmentAccount,
     deleteAdjustmentAccount,
     payAdjustmentAccount,
     syncAdjustmentAccountsCycle,
+    resetUserFinancialData,
   } = useApp();
+  const [, setLocation] = useLocation();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("gerais");
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
   const [serviceDraft, setServiceDraft] = useState({ name: "", price: "", duration: "" });
+  const [potDistributionDraft, setPotDistributionDraft] = useState({
+    personal: `${potDistribution.personal}`,
+    business: `${potDistribution.business}`,
+    reserve: `${potDistribution.reserve}`,
+  });
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
 
   const [accountDraft, setAccountDraft] = useState({
     name: "",
@@ -82,6 +109,14 @@ export default function AjustesModule() {
   useEffect(() => {
     setNameDraft(user?.name ?? "");
   }, [user?.name]);
+
+  useEffect(() => {
+    setPotDistributionDraft({
+      personal: `${potDistribution.personal}`,
+      business: `${potDistribution.business}`,
+      reserve: `${potDistribution.reserve}`,
+    });
+  }, [potDistribution.business, potDistribution.personal, potDistribution.reserve]);
 
   useEffect(() => {
     syncAdjustmentAccountsCycle();
@@ -103,6 +138,41 @@ export default function AjustesModule() {
     }).length;
     return { totalDebt, overdue, dueSoon };
   }, [adjustmentAccounts]);
+
+  const potDistributionValidation = useMemo(() => {
+    const fields = {
+      personal: potDistributionDraft.personal.trim(),
+      business: potDistributionDraft.business.trim(),
+      reserve: potDistributionDraft.reserve.trim(),
+    };
+    const hasEmpty = Object.values(fields).some((value) => value === "");
+    const values = {
+      personal: Number(fields.personal),
+      business: Number(fields.business),
+      reserve: Number(fields.reserve),
+    };
+
+    const hasNegative = Object.values(values).some((value) => Number.isFinite(value) && value < 0);
+    const hasInvalid = Object.values(values).some((value) => !Number.isFinite(value));
+    const sum = Number((values.personal + values.business + values.reserve).toFixed(2));
+    const diff = Number((100 - sum).toFixed(2));
+    const canSave = !hasEmpty && !hasNegative && !hasInvalid && Math.abs(diff) <= 0.001;
+
+    let message = "";
+    if (hasEmpty) {
+      message = "Preencha todos os campos de porcentagem.";
+    } else if (hasNegative) {
+      message = "Nao e permitido valor negativo.";
+    } else if (hasInvalid) {
+      message = "Use apenas numeros validos.";
+    } else if (sum > 100) {
+      message = "A soma dos potes não pode passar de 100%.";
+    } else if (sum < 100) {
+      message = `Ainda faltam ${diff}% para completar a distribuição.`;
+    }
+
+    return { canSave, message, sum, values };
+  }, [potDistributionDraft.business, potDistributionDraft.personal, potDistributionDraft.reserve]);
 
   const updateFeeSetting = (method: PaymentFeeSetting["method"], changes: Partial<PaymentFeeSetting>) => {
     const next = paymentFeeSettings.map((setting) =>
@@ -142,6 +212,46 @@ export default function AjustesModule() {
 
     setServiceDraft({ name: "", price: "", duration: "" });
     toast.success("Servico adicionado");
+  };
+
+  const handleSavePotDistribution = () => {
+    if (!potDistributionValidation.canSave) {
+      toast.error(potDistributionValidation.message || "Distribuicao invalida");
+      return;
+    }
+
+    setPotDistribution({
+      personal: Number(potDistributionValidation.values.personal.toFixed(2)),
+      business: Number(potDistributionValidation.values.business.toFixed(2)),
+      reserve: Number(potDistributionValidation.values.reserve.toFixed(2)),
+    });
+    toast.success("Distribuição dos potes salva com sucesso.");
+  };
+
+  const handleRestorePotDistributionDefault = () => {
+    setPotDistributionDraft({
+      personal: `${POT_DISTRIBUTION_DEFAULT.personal}`,
+      business: `${POT_DISTRIBUTION_DEFAULT.business}`,
+      reserve: `${POT_DISTRIBUTION_DEFAULT.reserve}`,
+    });
+  };
+
+  const handleConfirmReset = () => {
+    if (resetConfirmText !== "RESETAR") {
+      toast.error("Digite RESETAR para confirmar.");
+      return;
+    }
+
+    const result = resetUserFinancialData();
+    if (!result.ok) {
+      toast.error(result.error ?? "Nao foi possivel resetar.");
+      return;
+    }
+
+    setResetConfirmText("");
+    setIsResetDialogOpen(false);
+    toast.success("Suas informações foram resetadas com segurança.");
+    setLocation("/dashboard");
   };
 
   const handleAddAccount = () => {
@@ -248,6 +358,119 @@ export default function AjustesModule() {
             <button type="button" className="fd-primary-btn" onClick={handleSaveName}>
               Salvar nome
             </button>
+          </div>
+
+          <div className="fd-settings-small-card">
+            <h3>Distribuição dos Potes</h3>
+            <p>
+              Defina como cada entrada será dividida automaticamente. O FluxoCerto sugere uma divisão inicial, mas
+              você pode ajustar conforme sua realidade.
+            </p>
+
+            <div className="fd-settings-fees-list">
+              <div className="fd-settings-fee-row enabled">
+                <div>
+                  <p>Pessoal</p>
+                  <small>dinheiro para sua vida pessoal</small>
+                </div>
+                <div className="fd-inline-end">
+                  <input
+                    className="fd-pot-input fd-small-input"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={potDistributionDraft.personal}
+                    onChange={(event) =>
+                      setPotDistributionDraft((prev) => ({ ...prev, personal: event.target.value }))
+                    }
+                  />
+                  <small>%</small>
+                </div>
+              </div>
+
+              <div className="fd-settings-fee-row enabled">
+                <div>
+                  <p>Negócio</p>
+                  <small>dinheiro para manter seu trabalho funcionando</small>
+                </div>
+                <div className="fd-inline-end">
+                  <input
+                    className="fd-pot-input fd-small-input"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={potDistributionDraft.business}
+                    onChange={(event) =>
+                      setPotDistributionDraft((prev) => ({ ...prev, business: event.target.value }))
+                    }
+                  />
+                  <small>%</small>
+                </div>
+              </div>
+
+              <div className="fd-settings-fee-row enabled">
+                <div>
+                  <p>Reserva</p>
+                  <small>proteção para imprevistos</small>
+                </div>
+                <div className="fd-inline-end">
+                  <input
+                    className="fd-pot-input fd-small-input"
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={potDistributionDraft.reserve}
+                    onChange={(event) =>
+                      setPotDistributionDraft((prev) => ({ ...prev, reserve: event.target.value }))
+                    }
+                  />
+                  <small>%</small>
+                </div>
+              </div>
+            </div>
+
+            {potDistributionValidation.message ? (
+              <div className="fd-settings-form-placeholder">{potDistributionValidation.message}</div>
+            ) : (
+              <div className="fd-settings-form-placeholder">Soma atual: {potDistributionValidation.sum}%</div>
+            )}
+            <div className="fd-settings-actions-row">
+              <button
+                type="button"
+                className="fd-mini-btn fd-settings-action-btn"
+                onClick={handleRestorePotDistributionDefault}
+              >
+                Restaurar sugestao inicial
+              </button>
+              <button
+                type="button"
+                className="fd-primary-btn fd-settings-action-btn"
+                disabled={!potDistributionValidation.canSave}
+                onClick={handleSavePotDistribution}
+              >
+                Salvar distribuicao
+              </button>
+            </div>
+          </div>
+
+          <div className="fd-settings-small-card fd-settings-safety-zone border border-rose-400/25 bg-rose-500/5">
+            <h3>Zona de segurança</h3>
+            <p>
+              Use esta opção apenas se quiser recomeçar do zero. Sua conta continuará ativa, mas suas informações
+              financeiras serão apagadas.
+            </p>
+            <div className="fd-settings-actions-row">
+              <button
+                type="button"
+                className="fd-mini-btn fd-settings-action-btn fd-settings-reset-btn border-rose-400/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
+                onClick={() => {
+                  setResetConfirmText("");
+                  setIsResetDialogOpen(true);
+                }}
+              >
+                Resetar minhas informações
+              </button>
+            </div>
           </div>
         </article>
       )}
@@ -458,7 +681,7 @@ export default function AjustesModule() {
                           <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
                         </div>
                         <small>
-                          {account.category} • {mapPotLabel(account.pot)} • vence {account.dueDate}
+                          {account.category} â€¢ {mapPotLabel(account.pot)} â€¢ vence {account.dueDate}
                         </small>
                         <div className="fd-settings-bill-meta">
                           <span>{formatCurrency(account.amount)}</span>
@@ -505,7 +728,7 @@ export default function AjustesModule() {
                           <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
                         </div>
                         <small>
-                          {account.category} • {mapPotLabel(account.pot)} • vence {account.dueDate}
+                          {account.category} â€¢ {mapPotLabel(account.pot)} â€¢ vence {account.dueDate}
                         </small>
                         <div className="fd-settings-bill-meta">
                           <span>{formatCurrency(account.amount)}</span>
@@ -537,6 +760,50 @@ export default function AjustesModule() {
           </div>
         </article>
       )}
+
+      <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Tem certeza que deseja resetar suas informações?</DialogTitle>
+            <DialogDescription>
+              Essa ação apagará seus lançamentos, saldos, potes, clientes, itens/custos e configurações financeiras.
+              Sua conta e seu acesso continuarão ativos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <label className="fd-reset-dialog-label grid gap-2 text-sm">
+            Digite exatamente <strong>RESETAR</strong> para confirmar:
+            <input
+              className="fd-pot-input"
+              value={resetConfirmText}
+              onChange={(event) => setResetConfirmText(event.target.value)}
+              placeholder="RESETAR"
+            />
+          </label>
+
+          <DialogFooter className="fd-reset-dialog-footer">
+            <button
+              type="button"
+              className="fd-mini-btn fd-reset-dialog-cancel"
+              onClick={() => setIsResetDialogOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="fd-primary-btn fd-reset-dialog-confirm"
+              disabled={resetConfirmText !== "RESETAR"}
+              onClick={handleConfirmReset}
+            >
+              Confirmar reset
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
+
+
+
+

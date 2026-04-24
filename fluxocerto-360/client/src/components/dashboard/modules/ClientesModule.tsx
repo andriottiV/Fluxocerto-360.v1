@@ -55,6 +55,8 @@ export default function ClientesModule() {
 
       const directVisits = transactions.filter((tx) => {
         if (tx.type !== TransactionType.INCOME) return false;
+        if (tx.clientId && tx.clientId === client.id) return true;
+        if (tx.clientName && normalizeText(tx.clientName) === nameNeedle) return true;
         const haystack = normalizeText(`${tx.description} ${tx.origin ?? ""} ${tx.notes ?? ""}`);
         return haystack.includes(nameNeedle);
       }).length;

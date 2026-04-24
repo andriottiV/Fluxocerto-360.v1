@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useApp } from "@/contexts/AppContext";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { parseFinancialVoiceCommand } from "@/lib/voice/financialVoiceParser";
-import { PaymentMethod, TransactionType } from "@/lib/types";
+import { Client, PaymentMethod, TransactionType } from "@/lib/types";
 
 type VoiceModalState = "default" | "listening" | "processing" | "error" | "ready_for_confirmation";
 
@@ -18,6 +18,7 @@ type VoicePreviewForm = {
   date: string;
   areaHint: "pessoal" | "negocio" | "reserva" | "indefinido";
   paymentMethod?: PaymentMethod;
+  clientName?: string;
   ambiguous: boolean;
   missingFields: string[];
 };
@@ -41,7 +42,12 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function buildIncomeDescription(paymentMethod?: PaymentMethod, rawText?: string) {
+function buildIncomeDescription(
+  paymentMethod?: PaymentMethod,
+  rawText?: string,
+  clientName?: string,
+  amount?: number
+) {
   const text = rawText?.toLowerCase() ?? "";
   const inferred =
     paymentMethod ??
@@ -56,6 +62,21 @@ function buildIncomeDescription(paymentMethod?: PaymentMethod, rawText?: string)
             : text.includes("transferencia")
               ? "transferencia"
               : undefined);
+  const methodLabel =
+    inferred === "pix"
+      ? "pix"
+      : inferred === "dinheiro"
+        ? "dinheiro"
+        : inferred === "credito"
+          ? "crédito"
+          : inferred === "debito"
+            ? "débito"
+            : inferred === "transferencia"
+              ? "transferência"
+              : "";
+  if (clientName?.trim() && amount && amount > 0) {
+    return `Cliente ${clientName.trim()} pagou ${formatMoney(amount)}${methodLabel ? ` no ${methodLabel}` : ""}`;
+  }
   if (inferred === "pix") return "Recebimento via Pix";
   if (inferred === "dinheiro") return "Recebimento em dinheiro";
   if (inferred === "credito") return "Recebimento via cartão de crédito";
@@ -64,13 +85,26 @@ function buildIncomeDescription(paymentMethod?: PaymentMethod, rawText?: string)
   return "Recebimento";
 }
 
+function formatMoney(value: number) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function normalizeClientLookup(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function VoiceTransactionModal({
   isOpen,
   onClose,
   onSuccess,
   onStateChange,
 }: VoiceTransactionModalProps) {
-  const { accounts, pots, addTransaction } = useApp();
+  const { accounts, pots, addTransaction, clients, addClient, updateClient } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [preview, setPreview] = useState<VoicePreviewForm | null>(null);
@@ -89,6 +123,14 @@ export default function VoiceTransactionModal({
   const personalPot = useMemo(() => pots.find((pot) => pot.name.toLowerCase().includes("pess")) ?? pots[0], [pots]);
   const businessPot = useMemo(() => pots.find((pot) => pot.name.toLowerCase().includes("neg")) ?? pots[0], [pots]);
   const reservePot = useMemo(() => pots.find((pot) => pot.name.toLowerCase().includes("reserv")) ?? pots[0], [pots]);
+  const normalizedPreviewClient = normalizeClientLookup(preview?.clientName ?? "");
+  const existingClientMatch = useMemo(
+    () =>
+      normalizedPreviewClient
+        ? clients.find((client) => normalizeClientLookup(client.name) === normalizedPreviewClient) ?? null
+        : null,
+    [clients, normalizedPreviewClient]
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -117,11 +159,18 @@ export default function VoiceTransactionModal({
       category: parsed.type === TransactionType.INCOME ? "nao_aplicavel" : parsed.category ?? "outros",
       description:
         parsed.type === TransactionType.INCOME
-          ? buildIncomeDescription(parsed.paymentMethod, parsed.correctedText || parsed.rawText)
+          ? parsed.description ??
+            buildIncomeDescription(
+              parsed.paymentMethod,
+              parsed.correctedText || parsed.rawText,
+              parsed.clientName ?? parsed.customerName,
+              parsed.amount
+            )
           : parsed.description ?? "",
       date: parsed.date ?? todayIso(),
       areaHint: parsed.areaHint,
       paymentMethod: parsed.paymentMethod,
+      clientName: parsed.clientName ?? parsed.customerName,
       ambiguous: parsed.ambiguous,
       missingFields: parsed.missingFields,
     });
@@ -171,9 +220,46 @@ export default function VoiceTransactionModal({
 
     setIsSaving(true);
 
+    let linkedClient: Client | null = null;
+    let createdClient = false;
+    const rawClientName = (preview.clientName ?? "").trim();
+    const normalizedCommandClient = normalizeClientLookup(rawClientName);
+    if (preview.type === TransactionType.INCOME && normalizedCommandClient) {
+      linkedClient =
+        clients.find((client) => normalizeClientLookup(client.name) === normalizedCommandClient) ?? null;
+
+      if (!linkedClient) {
+        const slug = normalizedCommandClient.replace(/\s+/g, ".").replace(/[^a-z0-9.]/g, "");
+        const newClient: Client = {
+          id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: rawClientName,
+          email: slug ? `${slug}@cliente.local` : `cliente-${Date.now()}@cliente.local`,
+          phone: "",
+          totalSpent: Number(preview.amount),
+          status: "ativo",
+          lastService: "Comando de voz",
+        };
+        addClient(newClient);
+        linkedClient = newClient;
+        createdClient = true;
+      } else {
+        updateClient({
+          ...linkedClient,
+          totalSpent: Number((linkedClient.totalSpent + Number(preview.amount)).toFixed(2)),
+          lastService: "Comando de voz",
+          status: "ativo",
+        });
+      }
+    }
+
     const normalizedDescription =
       preview.type === TransactionType.INCOME
-        ? buildIncomeDescription(preview.paymentMethod, preview.rawText)
+        ? buildIncomeDescription(
+            preview.paymentMethod,
+            preview.rawText,
+            linkedClient?.name ?? preview.clientName,
+            Number(preview.amount)
+          )
         : preview.description.trim();
 
     const result = addTransaction({
@@ -186,6 +272,8 @@ export default function VoiceTransactionModal({
       paymentMethod: preview.paymentMethod,
       potId: resolvePotId(),
       origin: "Comando por voz",
+      clientId: linkedClient?.id,
+      clientName: linkedClient?.name,
     });
 
     if (!result.ok) {
@@ -194,7 +282,16 @@ export default function VoiceTransactionModal({
       return;
     }
 
-    toast.success("Movimentação registrada por voz.");
+    if (preview.type === TransactionType.INCOME && linkedClient) {
+      const amountLabel = formatMoney(Number(preview.amount));
+      if (createdClient) {
+        toast.success(`Cliente ${linkedClient.name} criado e entrada de ${amountLabel} registrada.`);
+      } else {
+        toast.success(`Entrada de ${amountLabel} vinculada ao cliente ${linkedClient.name}.`);
+      }
+    } else {
+      toast.success("Movimentação registrada por voz.");
+    }
     onSuccess?.();
     onClose();
   };
@@ -273,7 +370,23 @@ export default function VoiceTransactionModal({
                   step={0.01}
                   value={preview?.amount ?? ""}
                   onChange={(event) =>
-                    setPreview((prev) => (prev ? { ...prev, amount: event.target.value } : prev))
+                    setPreview((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            amount: event.target.value,
+                            description:
+                              prev.type === TransactionType.INCOME
+                                ? buildIncomeDescription(
+                                    prev.paymentMethod,
+                                    prev.rawText,
+                                    prev.clientName,
+                                    Number(event.target.value)
+                                  )
+                                : prev.description,
+                          }
+                        : prev
+                    )
                   }
                 />
               </label>
@@ -292,7 +405,9 @@ export default function VoiceTransactionModal({
                               prev.type === TransactionType.INCOME
                                 ? buildIncomeDescription(
                                     (event.target.value || undefined) as PaymentMethod | undefined,
-                                    prev.rawText
+                                    prev.rawText,
+                                    prev.clientName,
+                                    Number(prev.amount)
                                   )
                                 : prev.description,
                           }
@@ -344,11 +459,49 @@ export default function VoiceTransactionModal({
                   </label>
                 </>
               ) : (
-                <div className="fd-voice-income-note">
-                  <span>Recebimento</span>
-                  <strong>{buildIncomeDescription(preview?.paymentMethod, preview?.rawText)}</strong>
-                  <small>Descrição e data preenchidas automaticamente.</small>
-                </div>
+                <>
+                  <label>
+                    Cliente
+                    <input
+                      value={preview?.clientName ?? ""}
+                      placeholder="Nome do cliente"
+                      onChange={(event) =>
+                        setPreview((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                clientName: event.target.value,
+                                description: buildIncomeDescription(
+                                  prev.paymentMethod,
+                                  prev.rawText,
+                                  event.target.value,
+                                  Number(prev.amount)
+                                ),
+                              }
+                            : prev
+                        )
+                      }
+                    />
+                  </label>
+                  <div className="fd-voice-income-note">
+                    <span>Recebimento</span>
+                    <strong>
+                      {buildIncomeDescription(
+                        preview?.paymentMethod,
+                        preview?.rawText,
+                        preview?.clientName,
+                        Number(preview?.amount)
+                      )}
+                    </strong>
+                    <small>
+                      {!preview?.clientName?.trim()
+                        ? "Cliente não identificado automaticamente."
+                        : existingClientMatch
+                          ? `Cliente selecionado: ${existingClientMatch.name}`
+                          : `Novo cliente: ${preview.clientName.trim()}`}
+                    </small>
+                  </div>
+                </>
               )}
             </div>
 

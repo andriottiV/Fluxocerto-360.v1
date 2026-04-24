@@ -20,10 +20,6 @@ export default function LoginScreen() {
 
   const proceedAfterAuth = (nextUser: User, onboardingCompleted: boolean) => {
     setUser(nextUser);
-    if (nextUser.status !== "active") {
-      goScreen(ScreenType.DASHBOARD);
-      return;
-    }
     goScreen(onboardingCompleted ? ScreenType.DASHBOARD : ScreenType.ONBOARDING);
   };
 

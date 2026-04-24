@@ -4,16 +4,16 @@ import { ArrowDownCircle, ArrowUpCircle, Mic, Plus, Sparkles } from "lucide-reac
 import TransactionModal from "@/components/dashboard/shared/TransactionModal";
 import VoiceTransactionModal from "@/components/dashboard/shared/VoiceTransactionModal";
 import { useApp } from "@/contexts/AppContext";
-import { TransactionType } from "@/lib/types";
+import { PotType, TransactionType } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
 function WowPotOverlay({ open }: { open: boolean }) {
   const { pots } = useApp();
 
   const data = useMemo(() => {
-    const pf = pots.find((pot) => pot.name.toLowerCase().includes("pess"));
-    const pj = pots.find((pot) => pot.name.toLowerCase().includes("neg"));
-    const reserve = pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
+    const pf = pots.find((pot) => pot.type === PotType.PERSONAL) ?? pots.find((pot) => pot.name.toLowerCase().includes("pess"));
+    const pj = pots.find((pot) => pot.type === PotType.BUSINESS) ?? pots.find((pot) => pot.name.toLowerCase().includes("neg"));
+    const reserve = pots.find((pot) => pot.type === PotType.RESERVE) ?? pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
     const list = [
       { id: "pf", label: "PF", value: pf?.balance ?? 0 },
       { id: "pj", label: "PJ", value: pj?.balance ?? 0 },

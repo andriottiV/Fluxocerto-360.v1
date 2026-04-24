@@ -5154,3 +5154,301 @@ select.fd-pot-input option:disabled,
     font-size: 0.72rem;
   }
 }
+
+/* Consultor mascot integration (UI only) */
+.fd-consultor-clean-hero .fd-panel-head {
+  display: grid;
+  gap: 6px;
+}
+
+.fd-consultor-hero-badge {
+  width: fit-content;
+  min-height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 197, 94, 0.26);
+  background: rgba(4, 30, 22, 0.6);
+  color: rgba(178, 245, 205, 0.95);
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: 0.01em;
+}
+
+.fd-consultor-response-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.fd-consultor-response-list,
+.fd-consultor-response-headline,
+.fd-consultor-voice-error {
+  position: relative;
+  z-index: 1;
+}
+
+.fd-consultor-assistant-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.fd-consultor-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  object-fit: cover;
+  border: 2px solid rgba(34, 197, 94, 0.45);
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+  flex-shrink: 0;
+}
+
+.fd-consultor-chat-card {
+  display: grid;
+  gap: 8px;
+  align-items: flex-start;
+  background: rgba(4, 30, 22, 0.68);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 22px;
+  padding: 18px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  animation: fd-consultor-fade-in 260ms ease both;
+}
+
+.fd-chat-bubble-wrap.user .fd-chat-bubble.user {
+  animation: fd-consultor-fade-in 220ms ease both;
+}
+
+.fd-consultor-suggestion-row .fd-mini-chip {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.fd-consultor-suggestion-row .fd-mini-chip:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(34, 197, 94, 0.34);
+  background: rgba(11, 39, 29, 0.84);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(34, 197, 94, 0.12) inset;
+}
+
+.fd-consultor-mascot-desktop {
+  position: absolute;
+  right: 24px;
+  bottom: 18px;
+  width: 150px;
+  opacity: 0.45;
+  pointer-events: none;
+  z-index: 0;
+  filter: drop-shadow(0 0 22px rgba(34, 197, 94, 0.28));
+}
+
+@keyframes fd-consultor-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .fd-consultor-mascot-desktop {
+    display: none;
+  }
+}
+
+/* Ajustes buttons responsive layout */
+.fd-settings-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.fd-settings-action-btn {
+  min-width: fit-content;
+  width: auto;
+  white-space: nowrap;
+  padding: 12px 18px;
+  line-height: 1.2;
+  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fd-settings-reset-btn {
+  min-width: 220px;
+}
+
+.fd-settings-safety-zone {
+  max-width: 100%;
+  padding: 16px;
+  gap: 12px;
+  overflow: visible;
+}
+
+@media (max-width: 768px) {
+  .fd-settings-actions-row .fd-settings-action-btn {
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .fd-settings-reset-btn {
+    min-width: 0;
+  }
+}
+
+/* Ajustes reset dialog */
+.fd-reset-dialog-label {
+  margin-top: 12px;
+}
+
+.fd-reset-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.fd-reset-dialog-cancel {
+  padding: 12px 18px;
+  min-width: 120px;
+  width: auto;
+  height: auto;
+  white-space: nowrap;
+}
+
+.fd-reset-dialog-confirm {
+  padding: 12px 18px;
+  min-width: 160px;
+  width: auto;
+  height: auto;
+  white-space: nowrap;
+  border-color: rgba(248, 113, 113, 0.56);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(190, 24, 24, 0.9));
+  color: #fff;
+}
+
+.fd-reset-dialog-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .fd-reset-dialog-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fd-reset-dialog-cancel,
+  .fd-reset-dialog-confirm {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* Consultor layout refinement: hero único + fluxo simples */
+.fd-consultor-clean-page {
+  gap: 14px;
+}
+
+.fd-consultor-clean-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  min-height: 220px;
+  padding: 28px;
+  border-radius: 28px;
+  background: rgba(4, 30, 22, 0.68);
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  overflow: hidden;
+}
+
+.fd-consultor-hero-copy {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.fd-consultor-hero-copy h2 {
+  margin: 0;
+  font-size: clamp(1.22rem, 1.08rem + 0.42vw, 1.58rem);
+}
+
+.fd-consultor-hero-copy p {
+  margin: 0;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+.fd-consultor-hero-mascot {
+  width: clamp(170px, 19vw, 220px);
+  object-fit: contain;
+  align-self: flex-end;
+  filter: drop-shadow(0 0 24px rgba(34, 197, 94, 0.28));
+  flex-shrink: 0;
+}
+
+.fd-consultor-compose-panel {
+  gap: 16px;
+  padding: 22px;
+}
+
+.fd-consultor-input-shell {
+  padding: 12px;
+}
+
+.fd-consultor-suggestion-row {
+  gap: 10px;
+}
+
+.fd-consultor-response-panel {
+  padding: 18px;
+}
+
+.fd-consultor-response-list {
+  max-height: min(56vh, 620px);
+  gap: 12px;
+}
+
+.fd-consultor-chat-card {
+  width: min(100%, 880px);
+  padding: 20px;
+  border-color: rgba(34, 197, 94, 0.14);
+}
+
+.fd-consultor-chat-card p {
+  line-height: 1.6;
+  max-width: 72ch;
+}
+
+@media (max-width: 768px) {
+  .fd-consultor-clean-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: 0;
+    padding: 22px;
+  }
+
+  .fd-consultor-compose-panel {
+    padding: 20px;
+    gap: 14px;
+  }
+
+  .fd-consultor-hero-mascot {
+    width: 156px;
+    align-self: center;
+  }
+}

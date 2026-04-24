@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   Account,
   Achievement,
@@ -8,7 +9,13 @@ import {
   Cost,
   Insight,
   Notification,
+  NotificationType,
+  OnboardingDebtInput,
+  OnboardingFinancialMode,
+  OnboardingFixedExpenseInput,
+  OnboardingUsageMode,
   PaymentAccount,
+  PotDistribution,
   PaymentFeeSetting,
   Pot,
   PotType,
@@ -32,7 +39,15 @@ import {
   SALES_ITEMS,
   SERVICES,
 } from "@/lib/constants";
-import { bootstrapAuthUsers, updateAuthUserProfile } from "@/lib/auth";
+import {
+  bootstrapAuthUsers,
+  clearUserOnboardingData,
+  clearAuthSession,
+  getUserOnboardingData,
+  persistAuthSession,
+  restoreAuthSession,
+  updateAuthUserProfile,
+} from "@/lib/auth";
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -52,6 +67,38 @@ type UserScopedData = {
   costs: Cost[];
   paymentFeeSettings: PaymentFeeSetting[];
   adjustmentAccounts: AdjustmentAccount[];
+  potDistribution: PotDistribution;
+};
+
+type AchievementTemplate = Pick<Achievement, "id" | "title" | "description" | "icon" | "color"> & {
+  toastMessage: string;
+};
+
+const ACHIEVEMENT_TEMPLATES: Record<"first_record" | "seven_days" | "reserve_created", AchievementTemplate> = {
+  first_record: {
+    id: "ach-first-record",
+    title: "Primeiro registro financeiro",
+    description: "Você fez seu primeiro lançamento e começou a organizar seu dinheiro.",
+    icon: "Primeiro passo",
+    color: "from-emerald-500 to-emerald-600",
+    toastMessage: "🎉 Você desbloqueou: Primeiro passo financeiro!",
+  },
+  seven_days: {
+    id: "ach-7-days",
+    title: "7 dias de uso",
+    description: "Você manteve consistência e completou 7 dias de uso no FluxoCerto.",
+    icon: "Consistência",
+    color: "from-blue-500 to-blue-600",
+    toastMessage: "🎉 Você desbloqueou: 7 dias de consistência!",
+  },
+  reserve_created: {
+    id: "ach-reserve-created",
+    title: "Criou reserva",
+    description: "Sua reserva saiu do zero. Você está construindo segurança financeira.",
+    icon: "Reserva",
+    color: "from-amber-500 to-amber-600",
+    toastMessage: "🎉 Você desbloqueou: Reserva criada!",
+  },
 };
 
 function createId(prefix: string) {
@@ -66,6 +113,71 @@ function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function clampCurrency(value: number) {
+  return Number(Math.max(0, value).toFixed(2));
+}
+
+type OnboardingPotBlueprint = {
+  personal: Pick<Pot, "name" | "icon">;
+  business: Pick<Pot, "name" | "icon">;
+  reserve: Pick<Pot, "name" | "icon">;
+  distribution: PotDistribution;
+};
+
+function getOnboardingPotBlueprint(mode: OnboardingUsageMode): OnboardingPotBlueprint {
+  if (mode === "personal") {
+    return {
+      personal: { name: "Liberdade", icon: "Pessoal" },
+      business: { name: "Contas Fixas", icon: "Contas" },
+      reserve: { name: "Reserva", icon: "Reserva" },
+      distribution: { personal: 50, business: 40, reserve: 10 },
+    };
+  }
+  if (mode === "business") {
+    return {
+      personal: { name: "Negócio", icon: "Negocio" },
+      business: { name: "Impostos/Taxas", icon: "Impostos" },
+      reserve: { name: "Reserva", icon: "Reserva" },
+      distribution: { personal: 70, business: 20, reserve: 10 },
+    };
+  }
+  return {
+    personal: { name: "Pessoal", icon: "Pessoal" },
+    business: { name: "Negócio", icon: "Negocio" },
+    reserve: { name: "Reserva", icon: "Reserva" },
+    distribution: { personal: 50, business: 40, reserve: 10 },
+  };
+}
+
+function buildFinancialModeMessage(mode: OnboardingFinancialMode) {
+  if (mode === "chaos") {
+    return {
+      insight: "Modo alerta forte ativado. A prioridade agora é proteger seu caixa e cortar vazamentos.",
+      action: "Sair do descontrole",
+      notification: "Alerta forte ativo: evite gastos não essenciais até estabilizar o fluxo.",
+    };
+  }
+  if (mode === "breakEven") {
+    return {
+      insight: "Modo controle de gastos ativado. Vamos transformar empates em sobra mensal.",
+      action: "Fazer sobrar dinheiro",
+      notification: "Controle de gastos ativo: revise saídas recorrentes e negocie custos.",
+    };
+  }
+  if (mode === "surplus") {
+    return {
+      insight: "Modo reserva e investimento ativado. Foque em consistência e segurança.",
+      action: "Fortalecer reserva",
+      notification: "Reserva e investimento ativos: mantenha aportes frequentes para ganhar segurança.",
+    };
+  }
+  return {
+    insight: "Modo crescimento ativado. Priorize lucro, precificação e oportunidades de escala.",
+    action: "Aumentar lucro e escala",
+    notification: "Crescimento ativo: acompanhe margem e oportunidades para expandir com controle.",
+  };
+}
+
 function buildDefaultPaymentFees(): PaymentFeeSetting[] {
   return [
     { method: "credito", label: "Credito", enabled: true, feePercent: 3.49 },
@@ -76,11 +188,68 @@ function buildDefaultPaymentFees(): PaymentFeeSetting[] {
   ];
 }
 
+function buildDefaultPotDistribution(): PotDistribution {
+  return {
+    personal: 50,
+    business: 40,
+    reserve: 10,
+  };
+}
+
+function normalizePotDistribution(value?: Partial<PotDistribution>): PotDistribution {
+  const fallback = buildDefaultPotDistribution();
+  if (!value) return fallback;
+
+  const personal = Number(value.personal);
+  const business = Number(value.business);
+  const reserve = Number(value.reserve);
+  const allValid = [personal, business, reserve].every((item) => Number.isFinite(item) && item >= 0);
+  const total = personal + business + reserve;
+
+  if (!allValid || Math.abs(total - 100) > 0.001) {
+    return fallback;
+  }
+
+  return {
+    personal: Number(personal.toFixed(2)),
+    business: Number(business.toFixed(2)),
+    reserve: Number(reserve.toFixed(2)),
+  };
+}
+
+function getPotPercentage(type: PotType, distribution: PotDistribution) {
+  if (type === PotType.PERSONAL) return distribution.personal;
+  if (type === PotType.BUSINESS) return distribution.business;
+  return distribution.reserve;
+}
+
+function calculateAverageMonthlyIncome(transactions: Transaction[]) {
+  const monthTotals = new Map<string, number>();
+  transactions.forEach((tx) => {
+    if (tx.type !== TransactionType.INCOME) return;
+    const parsed = new Date(tx.date);
+    if (Number.isNaN(parsed.getTime())) return;
+    const key = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+    monthTotals.set(key, (monthTotals.get(key) ?? 0) + Math.max(0, tx.amount));
+  });
+  if (monthTotals.size === 0) return 0;
+  const total = Array.from(monthTotals.values()).reduce((sum, value) => sum + value, 0);
+  return clampCurrency(total / monthTotals.size);
+}
+
+function resolvePotGoalValue(type: PotType, referenceMonthlyIncome: number) {
+  if (referenceMonthlyIncome <= 0) return 0;
+  if (type === PotType.RESERVE) return clampCurrency(referenceMonthlyIncome * 3);
+  if (type === PotType.BUSINESS) return clampCurrency(referenceMonthlyIncome * 2);
+  return clampCurrency(referenceMonthlyIncome);
+}
+
 function cloneData<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function createEmptyData(): UserScopedData {
+  const distribution = buildDefaultPotDistribution();
   return {
     accounts: cloneData(ACCOUNTS).map((account) => ({
       ...account,
@@ -89,6 +258,8 @@ function createEmptyData(): UserScopedData {
     pots: cloneData(POTS).map((pot) => ({
       ...pot,
       balance: 0,
+      percentage: getPotPercentage(pot.type, distribution),
+      goalValue: 0,
       limit: 0,
     })),
     services: [] as Service[],
@@ -102,6 +273,7 @@ function createEmptyData(): UserScopedData {
     costs: [] as Cost[],
     paymentFeeSettings: buildDefaultPaymentFees(),
     adjustmentAccounts: [] as AdjustmentAccount[],
+    potDistribution: distribution,
   };
 }
 
@@ -112,9 +284,15 @@ function attachOwner<T extends { ownerId?: string }>(items: T[], ownerId: string
 }
 
 function normalizeOwnedData(userId: string, data: UserScopedData): UserScopedData {
+  const distribution = normalizePotDistribution(data.potDistribution);
   return {
     accounts: attachOwner(data.accounts, userId),
-    pots: attachOwner(data.pots, userId),
+    pots: attachOwner(data.pots, userId).map((pot) => ({
+      ...pot,
+      percentage: Number.isFinite(pot.percentage) ? pot.percentage : getPotPercentage(pot.type, distribution),
+      goalValue: Number.isFinite(pot.goalValue) ? pot.goalValue : clampCurrency(pot.limit ?? 0),
+      limit: clampCurrency(pot.limit ?? pot.goalValue ?? 0),
+    })),
     services: attachOwner(data.services, userId),
     clients: attachOwner(data.clients, userId),
     transactions: attachOwner(data.transactions, userId),
@@ -126,6 +304,7 @@ function normalizeOwnedData(userId: string, data: UserScopedData): UserScopedDat
     costs: attachOwner(data.costs, userId),
     paymentFeeSettings: attachOwner(data.paymentFeeSettings, userId),
     adjustmentAccounts: attachOwner(data.adjustmentAccounts, userId),
+    potDistribution: distribution,
   };
 }
 
@@ -151,6 +330,7 @@ function loadUserScopedData(userId: string): UserScopedData | null {
       costs: parsed.costs ?? fallback.costs,
       paymentFeeSettings: parsed.paymentFeeSettings ?? fallback.paymentFeeSettings,
       adjustmentAccounts: parsed.adjustmentAccounts ?? fallback.adjustmentAccounts,
+      potDistribution: normalizePotDistribution(parsed.potDistribution),
     };
   } catch {
     return null;
@@ -241,7 +421,7 @@ function validateCostInput(cost: Omit<Cost, "id"> & { id?: string }) {
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const baseData = createEmptyData();
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>(ScreenType.LOGIN);
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>(ScreenType.LANDING);
   const [user, setUserState] = useState<User | null>(null);
   const [accounts, setAccounts] = useState<Account[]>(baseData.accounts);
   const [pots, setPots] = useState<Pot[]>(baseData.pots);
@@ -256,6 +436,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [costs, setCosts] = useState<Cost[]>(baseData.costs);
   const [paymentFeeSettings, setPaymentFeeSettings] = useState<PaymentFeeSetting[]>(baseData.paymentFeeSettings);
   const [adjustmentAccounts, setAdjustmentAccounts] = useState<AdjustmentAccount[]>(baseData.adjustmentAccounts);
+  const [potDistribution, setPotDistributionState] = useState<PotDistribution>(baseData.potDistribution);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
+  const unlockAchievement = useCallback(
+    (key: keyof typeof ACHIEVEMENT_TEMPLATES) => {
+      if (!user?.id) return;
+      const template = ACHIEVEMENT_TEMPLATES[key];
+      let unlockedNow = false;
+
+      setAchievements((prev) => {
+        if (prev.some((item) => item.id === template.id)) {
+          return prev;
+        }
+        unlockedNow = true;
+        return [
+          {
+            id: template.id,
+            ownerId: user.id,
+            title: template.title,
+            description: template.description,
+            icon: template.icon,
+            color: template.color,
+            unlockedAt: new Date().toISOString(),
+          },
+          ...prev,
+        ];
+      });
+
+      if (!unlockedNow) return;
+
+      setNotifications((prev) => [
+        {
+          id: createId("notif"),
+          ownerId: user.id,
+          type: NotificationType.SUCCESS,
+          title: "Conquista desbloqueada",
+          message: template.toastMessage,
+          timestamp: new Date().toISOString(),
+          read: false,
+        },
+        ...prev,
+      ]);
+      toast.success(template.toastMessage);
+    },
+    [user?.id]
+  );
 
   const applyUserData = useCallback((nextData: UserScopedData) => {
     setAccounts(nextData.accounts);
@@ -271,6 +497,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCosts(nextData.costs);
     setPaymentFeeSettings(nextData.paymentFeeSettings);
     setAdjustmentAccounts(nextData.adjustmentAccounts);
+    setPotDistributionState(nextData.potDistribution);
   }, []);
 
   const setUser = useCallback(
@@ -278,9 +505,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUserState(nextUser);
 
       if (!nextUser) {
+        clearAuthSession();
         applyUserData(createEmptyData());
         return;
       }
+
+      persistAuthSession(nextUser.id);
 
       if (user?.id === nextUser.id) {
         updateAuthUserProfile(nextUser);
@@ -296,10 +526,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const goScreen = useCallback((screen: ScreenType) => {
     setCurrentScreen(screen);
-  }, []);
+  }, [applyUserData]);
 
   useEffect(() => {
     bootstrapAuthUsers();
+    const session = restoreAuthSession();
+
+    if (!session) {
+      setCurrentScreen(ScreenType.LANDING);
+      setIsAuthChecking(false);
+      return;
+    }
+
+    setUserState(session.user);
+    const userData = loadUserScopedData(session.user.id) ?? createEmptyData();
+    applyUserData(normalizeOwnedData(session.user.id, userData));
+
+    setCurrentScreen(session.onboardingCompleted ? ScreenType.DASHBOARD : ScreenType.ONBOARDING);
+    setIsAuthChecking(false);
   }, []);
 
   useEffect(() => {
@@ -318,6 +562,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       costs,
       paymentFeeSettings,
       adjustmentAccounts,
+      potDistribution,
     });
     window.localStorage.setItem(`${USER_DATA_KEY_PREFIX}${user.id}`, JSON.stringify(snapshot));
   }, [
@@ -335,11 +580,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     costs,
     paymentFeeSettings,
     adjustmentAccounts,
+    potDistribution,
   ]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (transactions.length > 0) {
+      unlockAchievement("first_record");
+    }
+  }, [transactions.length, unlockAchievement, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const reservePot =
+      pots.find((pot) => pot.type === PotType.RESERVE) ??
+      pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
+    if (!reservePot) return;
+    if (reservePot.balance > 0) {
+      unlockAchievement("reserve_created");
+    }
+  }, [pots, unlockAchievement, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !user.createdAt) return;
+    const createdAt = new Date(user.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return;
+    const msSince = Date.now() - createdAt.getTime();
+    if (msSince >= 7 * 24 * 60 * 60 * 1000) {
+      unlockAchievement("seven_days");
+    }
+  }, [unlockAchievement, user?.createdAt, user?.id]);
 
   const logout = useCallback(() => {
     setUser(null);
-    setCurrentScreen(ScreenType.LOGIN);
+    setCurrentScreen(ScreenType.LANDING);
   }, []);
 
   const addTransaction = useCallback((transactionInput: TransactionInput) => {
@@ -380,6 +654,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     setPots((prev) => {
+      if (transaction.type === TransactionType.INCOME) {
+        const personalPot = prev.find((pot) => pot.type === PotType.PERSONAL);
+        const businessPot = prev.find((pot) => pot.type === PotType.BUSINESS);
+        const reservePot = prev.find((pot) => pot.type === PotType.RESERVE);
+
+        if (personalPot && businessPot && reservePot) {
+          const personalAmount = Number(((normalizedAmount * potDistribution.personal) / 100).toFixed(2));
+          const businessAmount = Number(((normalizedAmount * potDistribution.business) / 100).toFixed(2));
+          const reserveAmount = Number((normalizedAmount - personalAmount - businessAmount).toFixed(2));
+
+          return prev.map((pot) => {
+            if (pot.id === personalPot.id) {
+              return { ...pot, balance: Number((pot.balance + personalAmount).toFixed(2)) };
+            }
+            if (pot.id === businessPot.id) {
+              return { ...pot, balance: Number((pot.balance + businessAmount).toFixed(2)) };
+            }
+            if (pot.id === reservePot.id) {
+              return { ...pot, balance: Number((pot.balance + reserveAmount).toFixed(2)) };
+            }
+            return pot;
+          });
+        }
+      }
+
       const target = transaction.potId
         ? prev.find((pot) => pot.id === transaction.potId)
         : resolvePotByType(transaction.type, prev);
@@ -397,7 +696,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     return { ok: true, data: transaction };
-  }, [user?.id]);
+  }, [potDistribution, user?.id]);
 
   const updateAccountBalance = useCallback((accountId: string, balance: number) => {
     setAccounts((prev) => prev.map((account) => (account.id === accountId ? { ...account, balance } : account)));
@@ -408,8 +707,319 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updatePotGoal = useCallback((potId: string, goal: number) => {
-    setPots((prev) => prev.map((pot) => (pot.id === potId ? { ...pot, limit: goal } : pot)));
+    const safeGoal = clampCurrency(goal);
+    setPots((prev) =>
+      prev.map((pot) => (pot.id === potId ? { ...pot, goalValue: safeGoal, limit: safeGoal } : pot))
+    );
   }, []);
+
+  const setPotDistribution = useCallback((distribution: PotDistribution) => {
+    setPotDistributionState(normalizePotDistribution(distribution));
+  }, []);
+
+  const applyOnboardingUsageMode = useCallback((usageMode: OnboardingUsageMode) => {
+    const blueprint = getOnboardingPotBlueprint(usageMode);
+    setPotDistributionState(blueprint.distribution);
+    setPots((prev) =>
+      prev.map((pot) => {
+        if (pot.type === PotType.PERSONAL) {
+          return {
+            ...pot,
+            name: blueprint.personal.name,
+            icon: blueprint.personal.icon,
+            percentage: blueprint.distribution.personal,
+          };
+        }
+        if (pot.type === PotType.BUSINESS) {
+          return {
+            ...pot,
+            name: blueprint.business.name,
+            icon: blueprint.business.icon,
+            percentage: blueprint.distribution.business,
+          };
+        }
+        if (pot.type === PotType.RESERVE) {
+          return {
+            ...pot,
+            name: blueprint.reserve.name,
+            icon: blueprint.reserve.icon,
+            percentage: blueprint.distribution.reserve,
+          };
+        }
+        return pot;
+      })
+    );
+  }, []);
+
+  const applyOnboardingIncome = useCallback((usageMode: OnboardingUsageMode, monthlyIncome: number) => {
+    if (!user?.id) return;
+    const safeIncome = clampCurrency(monthlyIncome);
+    const blueprint = getOnboardingPotBlueprint(usageMode);
+    const distribution = blueprint.distribution;
+    const personalBalance = clampCurrency((safeIncome * distribution.personal) / 100);
+    const businessBalance = clampCurrency((safeIncome * distribution.business) / 100);
+    const reserveBalance = clampCurrency(safeIncome - personalBalance - businessBalance);
+
+    setPotDistributionState(distribution);
+    setPots((prev) =>
+      prev.map((pot) => {
+        if (pot.type === PotType.PERSONAL) {
+          return {
+            ...pot,
+            name: blueprint.personal.name,
+            icon: blueprint.personal.icon,
+            balance: personalBalance,
+            percentage: distribution.personal,
+            goalValue: safeIncome,
+            limit: safeIncome,
+          };
+        }
+        if (pot.type === PotType.BUSINESS) {
+          return {
+            ...pot,
+            name: blueprint.business.name,
+            icon: blueprint.business.icon,
+            balance: businessBalance,
+            percentage: distribution.business,
+            goalValue: clampCurrency(safeIncome * 2),
+            limit: clampCurrency(safeIncome * 2),
+          };
+        }
+        if (pot.type === PotType.RESERVE) {
+          return {
+            ...pot,
+            name: blueprint.reserve.name,
+            icon: blueprint.reserve.icon,
+            balance: reserveBalance,
+            percentage: distribution.reserve,
+            goalValue: clampCurrency(safeIncome * 3),
+            limit: clampCurrency(safeIncome * 3),
+          };
+        }
+        return pot;
+      })
+    );
+
+    setAccounts((prev) =>
+      prev.map((account, index) => {
+        if (index === 0) return { ...account, balance: safeIncome };
+        if (index === 1) return { ...account, balance: reserveBalance };
+        return account;
+      })
+    );
+
+    const seedTransaction: Transaction = {
+      id: createId("tx"),
+      ownerId: user.id,
+      type: TransactionType.INCOME,
+      description: "Saldo inicial configurado no onboarding",
+      amount: safeIncome,
+      date: todayIso(),
+      category: "onboarding",
+      account: "Conta Corrente",
+      origin: "Onboarding",
+      notes: "onboarding-seed-income",
+      potId: "pot-001",
+    };
+    setTransactions((prev) => {
+      const next = prev.filter((tx) => tx.notes !== "onboarding-seed-income");
+      return [seedTransaction, ...next];
+    });
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const onboardingIncome = getUserOnboardingData(user.id).monthlyIncome;
+    const inferredIncome = calculateAverageMonthlyIncome(transactions);
+    const referenceIncome = clampCurrency(
+      typeof onboardingIncome === "number" && Number.isFinite(onboardingIncome) && onboardingIncome > 0
+        ? onboardingIncome
+        : inferredIncome
+    );
+
+    setPots((prev) => {
+      let changed = false;
+      const next = prev.map((pot) => {
+        const nextPercentage = getPotPercentage(pot.type, potDistribution);
+        const nextGoal = resolvePotGoalValue(pot.type, referenceIncome);
+        const currentLimit = pot.limit ?? 0;
+        if (
+          Math.abs((pot.percentage ?? 0) - nextPercentage) < 0.001 &&
+          Math.abs((pot.goalValue ?? 0) - nextGoal) < 0.001 &&
+          Math.abs(currentLimit - nextGoal) < 0.001
+        ) {
+          return pot;
+        }
+        changed = true;
+        return {
+          ...pot,
+          percentage: nextPercentage,
+          goalValue: nextGoal,
+          limit: nextGoal,
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, [potDistribution, transactions, user?.id]);
+
+  const applyOnboardingFinancialMode = useCallback((financialMode: OnboardingFinancialMode) => {
+    const modeCopy = buildFinancialModeMessage(financialMode);
+    setInsights((prev) => {
+      const filtered = prev.filter((insight) => insight.id !== "onboarding-primary-goal");
+      return [
+        {
+          id: "onboarding-primary-goal",
+          ownerId: user?.id,
+          title: "Meta principal",
+          description: modeCopy.action,
+          value: modeCopy.insight,
+          trend: financialMode === "chaos" ? "down" : "up",
+          icon: "Meta",
+          color: financialMode === "chaos" ? "from-rose-500 to-rose-600" : "from-emerald-500 to-emerald-600",
+        },
+        ...filtered,
+      ];
+    });
+
+    setNotifications((prev) => {
+      const filtered = prev.filter((notification) => notification.id !== "onboarding-financial-mode");
+      const type =
+        financialMode === "chaos"
+          ? NotificationType.ERROR
+          : financialMode === "breakEven"
+            ? NotificationType.WARNING
+            : NotificationType.INFO;
+      return [
+        {
+          id: "onboarding-financial-mode",
+          ownerId: user?.id,
+          type,
+          title: "Modo financeiro ativado",
+          message: modeCopy.notification,
+          timestamp: new Date().toISOString(),
+          read: false,
+        },
+        ...filtered,
+      ];
+    });
+  }, [user?.id]);
+
+  const addOnboardingDebt = useCallback(
+    (debt: OnboardingDebtInput, usageMode: OnboardingUsageMode) => {
+      if (!user?.id) return { ok: false, error: "Usuario nao autenticado" };
+
+      const totalAmount = clampCurrency(debt.totalAmount);
+      const monthlyPayment = clampCurrency(debt.monthlyPayment);
+      if (!debt.name.trim()) return { ok: false, error: "Nome da divida obrigatorio" };
+      if (totalAmount <= 0 || monthlyPayment <= 0) return { ok: false, error: "Valores invalidos" };
+
+      const installmentsTotal = Math.max(1, Math.ceil(totalAmount / monthlyPayment));
+      const due = new Date();
+      due.setDate(due.getDate() + 7);
+      const dueIso = due.toISOString().slice(0, 10);
+      const pot: "pf" | "pj" = usageMode === "business" ? "pj" : "pf";
+      const category = usageMode === "business" ? "impostos" : "cartao";
+
+      setAdjustmentAccounts((prev) => [
+        {
+          id: createId("bill"),
+          ownerId: user.id,
+          name: debt.name.trim(),
+          amount: monthlyPayment,
+          category,
+          type: "variavel",
+          dueDate: dueIso,
+          pot,
+          installmentsTotal,
+          installmentsRemaining: installmentsTotal,
+          totalDebt: totalAmount,
+          status: "pendente",
+          cycleMonthKey: monthKey(due),
+        },
+        ...prev,
+      ]);
+
+      setPaymentAccounts((prev) => [
+        {
+          id: createId("pay"),
+          ownerId: user.id,
+          name: debt.name.trim(),
+          dueDate: due.getDate(),
+          amount: monthlyPayment,
+          status: "pendente",
+          icon: "Divida",
+          color: "from-rose-500 to-rose-600",
+        },
+        ...prev,
+      ]);
+
+      setNotifications((prev) => [
+        {
+          id: createId("notif"),
+          ownerId: user.id,
+          type: NotificationType.WARNING,
+          title: "Plano de quitação criado",
+          message: `Dívida "${debt.name.trim()}" adicionada com pagamento mensal de R$ ${monthlyPayment.toFixed(2)}.`,
+          timestamp: new Date().toISOString(),
+          read: false,
+        },
+        ...prev,
+      ]);
+
+      return { ok: true };
+    },
+    [user?.id]
+  );
+
+  const addOnboardingFixedExpense = useCallback(
+    (expense: OnboardingFixedExpenseInput, usageMode: OnboardingUsageMode) => {
+      if (!user?.id) return { ok: false, error: "Usuario nao autenticado" };
+      const amount = clampCurrency(expense.amount);
+      const dueDate = expense.dueDate;
+      if (!expense.name.trim()) return { ok: false, error: "Nome da despesa obrigatorio" };
+      if (amount <= 0 || Number.isNaN(new Date(dueDate).getTime())) {
+        return { ok: false, error: "Dados invalidos da despesa fixa" };
+      }
+
+      const due = new Date(dueDate);
+      const pot: "pf" | "pj" = usageMode === "business" ? "pj" : "pf";
+      const category = usageMode === "business" ? "fornecedores" : "moradia";
+
+      setAdjustmentAccounts((prev) => [
+        {
+          id: createId("bill"),
+          ownerId: user.id,
+          name: expense.name.trim(),
+          amount,
+          category,
+          type: "fixa",
+          dueDate,
+          pot,
+          status: "pendente",
+          cycleMonthKey: monthKey(due),
+        },
+        ...prev,
+      ]);
+
+      setPaymentAccounts((prev) => [
+        {
+          id: createId("pay"),
+          ownerId: user.id,
+          name: expense.name.trim(),
+          dueDate: due.getDate(),
+          amount,
+          status: "pendente",
+          icon: "Conta",
+          color: "from-amber-500 to-orange-600",
+        },
+        ...prev,
+      ]);
+
+      return { ok: true };
+    },
+    [user?.id]
+  );
 
   const addService = useCallback((serviceInput: Omit<Service, "id"> & { id?: string }) => {
     if (!user?.id) {
@@ -621,11 +1231,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setClients((prev) => prev.filter((client) => client.id !== clientId));
   }, []);
 
+  const resetUserFinancialData = useCallback(() => {
+    if (!user?.id) {
+      return { ok: false, error: "Usuario nao autenticado" };
+    }
+
+    clearUserOnboardingData(user.id);
+    applyUserData(createEmptyData());
+    return { ok: true };
+  }, [applyUserData, user?.id]);
+
   const value: AppContextType = {
     state: {
       currentScreen,
       user,
-      isLoading: false,
+      isLoading: isAuthChecking,
       error: null,
       theme: "light",
     },
@@ -647,6 +1267,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     costs,
     paymentFeeSettings,
     adjustmentAccounts,
+    potDistribution,
     addTransaction,
     updateAccountBalance,
     updatePot,
@@ -656,11 +1277,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addCost,
     deleteCost,
     setPaymentFeeSettings,
+    setPotDistribution,
+    applyOnboardingUsageMode,
+    applyOnboardingIncome,
+    applyOnboardingFinancialMode,
+    addOnboardingDebt,
+    addOnboardingFixedExpense,
     addAdjustmentAccount,
     updateAdjustmentAccount,
     deleteAdjustmentAccount,
     syncAdjustmentAccountsCycle,
     payAdjustmentAccount,
+    resetUserFinancialData,
     addClient,
     updateClient,
     deleteClient,

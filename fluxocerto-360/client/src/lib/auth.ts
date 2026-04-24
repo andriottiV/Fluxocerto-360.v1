@@ -1,8 +1,17 @@
-import { User, UserStatus } from "@/lib/types";
+import {
+  OnboardingDebtInput,
+  OnboardingFinancialMode,
+  OnboardingFixedExpenseInput,
+  OnboardingUsageMode,
+  User,
+  UserStatus,
+} from "@/lib/types";
 import { canAccessAdmin, isAdmin } from "@/lib/authz";
 
 const AUTH_USERS_KEY = "fc360:auth:users:v2";
+const AUTH_SESSION_KEY = "fc360:auth:session:v1";
 const ONBOARDING_KEY_PREFIX = "fc360:onboarding:";
+const ONBOARDING_DATA_KEY_PREFIX = "fc360:onboarding:data:";
 const DEFAULT_ADMIN_EMAIL = "andriottidev@gmail.com";
 
 type StoredAuthUser = User & {
@@ -20,6 +29,15 @@ type CreateAccountInput = {
   name?: string;
   email: string;
   password: string;
+};
+
+export type OnboardingData = {
+  step?: 1 | 2 | 3 | 4;
+  usageMode?: OnboardingUsageMode;
+  monthlyIncome?: number;
+  financialMode?: OnboardingFinancialMode;
+  debts?: OnboardingDebtInput[];
+  fixedExpenses?: OnboardingFixedExpenseInput[];
 };
 
 function isBrowser() {
@@ -54,7 +72,7 @@ function roleAndStatusForEmail(email: string) {
   if (ADMIN_EMAILS.has(normalizeEmail(email))) {
     return { role: "admin" as const, status: "active" as const };
   }
-  return { role: "tester" as const, status: "pending" as const };
+  return { role: "tester" as const, status: "active" as const };
 }
 
 function defaultBusinessName(name?: string) {
@@ -112,6 +130,27 @@ function writeUsers(users: StoredAuthUser[]) {
   window.localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
 }
 
+function writeSession(userId: string | null) {
+  if (!isBrowser()) return;
+  if (!userId) {
+    window.localStorage.removeItem(AUTH_SESSION_KEY);
+    return;
+  }
+  window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ userId }));
+}
+
+function readSessionUserId(): string | null {
+  if (!isBrowser()) return null;
+  const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { userId?: string };
+    return typeof parsed.userId === "string" && parsed.userId.trim() ? parsed.userId : null;
+  } catch {
+    return null;
+  }
+}
+
 function readOnboardingCompleted(userId: string) {
   if (!isBrowser()) return false;
   return window.localStorage.getItem(`${ONBOARDING_KEY_PREFIX}${userId}`) === "true";
@@ -120,6 +159,84 @@ function readOnboardingCompleted(userId: string) {
 function writeOnboardingCompleted(userId: string, completed: boolean) {
   if (!isBrowser()) return;
   window.localStorage.setItem(`${ONBOARDING_KEY_PREFIX}${userId}`, completed ? "true" : "false");
+}
+
+function readOnboardingData(userId: string): OnboardingData {
+  if (!isBrowser()) return {};
+  const raw = window.localStorage.getItem(`${ONBOARDING_DATA_KEY_PREFIX}${userId}`);
+  if (!raw) return {};
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<OnboardingData>;
+    const usageMode =
+      parsed.usageMode === "personal" || parsed.usageMode === "business" || parsed.usageMode === "both"
+        ? parsed.usageMode
+        : undefined;
+    const step = parsed.step === 1 || parsed.step === 2 || parsed.step === 3 || parsed.step === 4 ? parsed.step : undefined;
+    const monthlyIncome =
+      typeof parsed.monthlyIncome === "number" && Number.isFinite(parsed.monthlyIncome) && parsed.monthlyIncome >= 0
+        ? parsed.monthlyIncome
+        : undefined;
+    const financialMode =
+      parsed.financialMode === "chaos" ||
+      parsed.financialMode === "breakEven" ||
+      parsed.financialMode === "surplus" ||
+      parsed.financialMode === "growth"
+        ? parsed.financialMode
+        : undefined;
+    const debts = Array.isArray(parsed.debts)
+      ? parsed.debts
+          .map((debt) => ({
+            name: String(debt?.name ?? "").trim(),
+            totalAmount: Number(debt?.totalAmount ?? NaN),
+            monthlyPayment: Number(debt?.monthlyPayment ?? NaN),
+          }))
+          .filter(
+            (debt) =>
+              debt.name &&
+              Number.isFinite(debt.totalAmount) &&
+              debt.totalAmount > 0 &&
+              Number.isFinite(debt.monthlyPayment) &&
+              debt.monthlyPayment > 0
+          )
+      : undefined;
+    const fixedExpenses = Array.isArray(parsed.fixedExpenses)
+      ? parsed.fixedExpenses
+          .map((expense) => ({
+            name: String(expense?.name ?? "").trim(),
+            amount: Number(expense?.amount ?? NaN),
+            dueDate: String(expense?.dueDate ?? ""),
+          }))
+          .filter(
+            (expense) =>
+              expense.name &&
+              Number.isFinite(expense.amount) &&
+              expense.amount > 0 &&
+              !Number.isNaN(new Date(expense.dueDate).getTime())
+          )
+      : undefined;
+
+    return {
+      step,
+      usageMode,
+      monthlyIncome,
+      financialMode,
+      debts,
+      fixedExpenses,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeOnboardingData(userId: string, data: OnboardingData) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(`${ONBOARDING_DATA_KEY_PREFIX}${userId}`, JSON.stringify(data));
+}
+
+function clearOnboardingData(userId: string) {
+  if (!isBrowser()) return;
+  window.localStorage.removeItem(`${ONBOARDING_DATA_KEY_PREFIX}${userId}`);
 }
 
 export function bootstrapAuthUsers() {
@@ -134,7 +251,10 @@ export function bootstrapAuthUsers() {
         approvedBy: user.approvedBy ?? "system",
       });
     }
-    return coerceUserShape(user);
+    return coerceUserShape({
+      ...user,
+      status: user.status === "blocked" ? "blocked" : "active",
+    });
   });
   writeUsers(users);
 }
@@ -153,6 +273,7 @@ export function authenticateUser(email: string, password: string): AuthResult {
     lastLoginAt: nowIso(),
   };
   writeUsers(users.map((item) => (item.id === updated.id ? updated : item)));
+  writeSession(updated.id);
 
   return {
     ok: true,
@@ -192,6 +313,7 @@ export function createAccount(input: CreateAccountInput): AuthResult {
 
   writeUsers([newUser, ...users]);
   writeOnboardingCompleted(newUser.id, false);
+  writeSession(newUser.id);
 
   return {
     ok: true,
@@ -230,6 +352,64 @@ export function updateAuthUserProfile(nextUser: User) {
 
 export function markUserOnboardingCompleted(userId: string) {
   writeOnboardingCompleted(userId, true);
+}
+
+export function persistAuthSession(userId: string) {
+  writeSession(userId);
+}
+
+export function clearAuthSession() {
+  writeSession(null);
+}
+
+export function restoreAuthSession(): { user: User; onboardingCompleted: boolean } | null {
+  const userId = readSessionUserId();
+  if (!userId) return null;
+
+  const users = readUsers();
+  const found = users.find((item) => item.id === userId);
+  if (!found) {
+    writeSession(null);
+    return null;
+  }
+
+  return {
+    user: toPublicUser(found),
+    onboardingCompleted: readOnboardingCompleted(found.id),
+  };
+}
+
+export function isUserOnboardingCompleted(userId: string) {
+  return readOnboardingCompleted(userId);
+}
+
+export function getUserOnboardingData(userId: string): OnboardingData {
+  return readOnboardingData(userId);
+}
+
+export function saveUserOnboardingData(userId: string, nextData: Partial<OnboardingData>) {
+  const current = readOnboardingData(userId);
+  const merged: OnboardingData = {
+    ...current,
+    ...nextData,
+  };
+
+  if (
+    typeof merged.monthlyIncome !== "number" ||
+    !Number.isFinite(merged.monthlyIncome) ||
+    merged.monthlyIncome < 0
+  ) {
+    delete merged.monthlyIncome;
+  }
+  if (!merged.step || merged.step < 1 || merged.step > 4) delete merged.step;
+  if (!Array.isArray(merged.debts)) delete merged.debts;
+  if (!Array.isArray(merged.fixedExpenses)) delete merged.fixedExpenses;
+
+  writeOnboardingData(userId, merged);
+}
+
+export function clearUserOnboardingData(userId: string) {
+  clearOnboardingData(userId);
 }
 
 export function listManagedUsers(requester: User): User[] {

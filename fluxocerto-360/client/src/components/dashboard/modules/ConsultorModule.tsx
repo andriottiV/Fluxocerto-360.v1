@@ -1,9 +1,11 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Send, Square, Sparkles } from "lucide-react";
+import { Mic, Send, Square } from "lucide-react";
 
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { useApp } from "@/contexts/AppContext";
+import { getUserOnboardingData } from "@/lib/auth";
 import { runFinancialAdvisorEngine } from "@/lib/financialAdvisor";
+import { PotType } from "@/lib/types";
 import {
   answerConsultorConversation,
   type ConsultorConversationReply,
@@ -38,7 +40,7 @@ const ACTION_TO_QUESTION: Record<string, string> = {
 };
 
 export default function ConsultorModule() {
-  const { transactions, pots } = useApp();
+  const { transactions, pots, user } = useApp();
   const [question, setQuestion] = useState("");
   const [isResponding, setIsResponding] = useState(false);
   const [messages, setMessages] = useState<ConsultorChatMessage[]>([]);
@@ -58,6 +60,33 @@ export default function ConsultorModule() {
     () => runFinancialAdvisorEngine({ transactions, pots, projectionDays: 30 }),
     [transactions, pots]
   );
+
+  const reserveGoalProgressText = useMemo(() => {
+    const reservePot =
+      pots.find((pot) => pot.type === PotType.RESERVE) ?? pots.find((pot) => pot.name.toLowerCase().includes("reserv"));
+    if (!reservePot) return "";
+    const goalValue = reservePot.goalValue ?? reservePot.limit ?? 0;
+    if (!Number.isFinite(goalValue) || goalValue <= 0) return "";
+    const progress = Math.max(0, Math.min((reservePot.balance / goalValue) * 100, 999));
+    return ` Você já atingiu ${progress.toFixed(0)}% da sua reserva. Continue assim.`;
+  }, [pots]);
+
+  const initialAdvisorMessage = useMemo(() => {
+    const mode = user?.id ? getUserOnboardingData(user.id).financialMode : undefined;
+    if (mode === "chaos") {
+      return `Percebi que seu foco agora é sair do descontrole. Vou te ajudar a proteger seu dinheiro e evitar gastos que possam te apertar.${reserveGoalProgressText}`;
+    }
+    if (mode === "breakEven") {
+      return `Seu objetivo agora é fazer sobrar. Vou te ajudar a enxergar para onde o dinheiro está indo.${reserveGoalProgressText}`;
+    }
+    if (mode === "surplus") {
+      return `Você já consegue fazer sobrar um pouco. Agora o foco é fortalecer sua reserva e dar mais segurança para suas decisões.${reserveGoalProgressText}`;
+    }
+    if (mode === "growth") {
+      return `Seu foco é crescimento. Vou te ajudar a acompanhar lucro, custos e oportunidades para evoluir com mais clareza.${reserveGoalProgressText}`;
+    }
+    return `Olá! 👋 Sou seu consultor financeiro. Estou aqui pra te ajudar a tomar decisões melhores com seu dinheiro.${reserveGoalProgressText}`;
+  }, [reserveGoalProgressText, user?.id]);
 
   useEffect(() => {
     if (!voiceTranscript) return;
@@ -115,10 +144,19 @@ export default function ConsultorModule() {
   return (
     <section className="fd-consultor-page fd-consultor-clean-page">
       <article className="fd-panel fd-glass fd-consultor-clean-hero">
-        <div className="fd-panel-head">
-          <h2>Consultor Fluxo</h2>
+        <div className="fd-consultor-hero-copy">
+          <h2>Flux, seu consultor inteligente</h2>
           <p>Converse com seu consultor financeiro e receba orientações práticas para decidir melhor hoje.</p>
+          <span className="fd-consultor-hero-badge">IA do FluxoCerto</span>
         </div>
+        <img
+          src="/mascoteprincipal.png"
+          alt="Flux, consultor inteligente"
+          className="fd-consultor-hero-mascot mascote-principal-consultor"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
       </article>
 
       <article className="fd-panel fd-glass fd-consultor-compose-panel">
@@ -191,81 +229,115 @@ export default function ConsultorModule() {
 
         <div ref={responseRef} className="fd-consultor-response-list">
           {messages.length === 0 ? (
-            <div className="fd-consultor-chat-empty">
-              <Sparkles className="h-5 w-5" />
-              <h4>Seu consultor está pronto</h4>
-              <p>Faça sua pergunta acima. A resposta vai aparecer aqui com recomendação prática e objetiva.</p>
+            <div className="fd-chat-bubble-wrap assistant fd-consultor-assistant-row">
+              <img
+                src="/mascoterosto.png"
+                alt="Consultor Fluxo"
+                className="fd-consultor-avatar"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+              <div className="fd-chat-bubble assistant fd-consultor-chat-card">
+                <p>{initialAdvisorMessage}</p>
+              </div>
             </div>
           ) : null}
 
-          {messages.map((message) => (
-            <div key={message.id} className={`fd-chat-bubble-wrap ${message.role === "user" ? "user" : "assistant"}`}>
-              <div className={`fd-chat-bubble ${message.role === "user" ? "user" : "assistant"}`}>
-                {message.text.split("\n").map((line) => (
-                  <p key={`${message.id}-${line}`}>{line}</p>
-                ))}
-
-                {message.role === "assistant" && message.riskTone ? (
-                  <span className={`fd-consultor-risk-chip ${message.riskTone}`}>
-                    {message.riskTone === "critical" && "Atenção"}
-                    {message.riskTone === "attention" && "Cautela"}
-                    {message.riskTone === "positive" && "Seguro"}
-                  </span>
-                ) : null}
-
-                {message.role === "assistant" && message.richCards && message.richCards.length > 0 ? (
-                  <div className="fd-consultor-rich-grid">
-                    {message.richCards.map((card) => (
-                      <div key={`${message.id}-${card.title}`} className="fd-consultor-rich-card">
-                        <strong>{card.title}</strong>
-                        <p>{card.description}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {message.role === "assistant" && message.quickActions && message.quickActions.length > 0 ? (
-                  <div className="fd-consultor-action-row">
-                    {message.quickActions.slice(0, 3).map((action) => (
-                      <button
-                        key={`${message.id}-${action}`}
-                        type="button"
-                        className="fd-mini-btn"
-                        onClick={() => {
-                          void submitQuestion(ACTION_TO_QUESTION[action] ?? action);
-                        }}
-                      >
-                        {action}
-                      </button>
-                    ))}
-                    {message.quickActions.length > 3 ? (
-                      <details className="fd-consultor-more-actions">
-                        <summary>Mais opções</summary>
-                        <div className="fd-consultor-more-actions-list">
-                          {message.quickActions.slice(3).map((action) => (
-                            <button
-                              key={`${message.id}-extra-${action}`}
-                              type="button"
-                              className="fd-mini-btn"
-                              onClick={() => {
-                                void submitQuestion(ACTION_TO_QUESTION[action] ?? action);
-                              }}
-                            >
-                              {action}
-                            </button>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
-                  </div>
-                ) : null}
+          {messages.map((message) =>
+            message.role === "user" ? (
+              <div key={message.id} className="fd-chat-bubble-wrap user">
+                <div className="fd-chat-bubble user">
+                  {message.text.split("\n").map((line) => (
+                    <p key={`${message.id}-${line}`}>{line}</p>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ) : (
+              <div key={message.id} className="fd-chat-bubble-wrap assistant fd-consultor-assistant-row">
+                <img
+                  src="/mascoterosto.png"
+                  alt="Consultor Fluxo"
+                  className="fd-consultor-avatar"
+                  onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                  }}
+                />
+                <div className="fd-chat-bubble assistant fd-consultor-chat-card">
+                  {message.text.split("\n").map((line) => (
+                    <p key={`${message.id}-${line}`}>{line}</p>
+                  ))}
+
+                  {message.riskTone ? (
+                    <span className={`fd-consultor-risk-chip ${message.riskTone}`}>
+                      {message.riskTone === "critical" && "Atenção"}
+                      {message.riskTone === "attention" && "Cautela"}
+                      {message.riskTone === "positive" && "Seguro"}
+                    </span>
+                  ) : null}
+
+                  {message.richCards && message.richCards.length > 0 ? (
+                    <div className="fd-consultor-rich-grid">
+                      {message.richCards.map((card) => (
+                        <div key={`${message.id}-${card.title}`} className="fd-consultor-rich-card">
+                          <strong>{card.title}</strong>
+                          <p>{card.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {message.quickActions && message.quickActions.length > 0 ? (
+                    <div className="fd-consultor-action-row">
+                      {message.quickActions.slice(0, 3).map((action) => (
+                        <button
+                          key={`${message.id}-${action}`}
+                          type="button"
+                          className="fd-mini-btn"
+                          onClick={() => {
+                            void submitQuestion(ACTION_TO_QUESTION[action] ?? action);
+                          }}
+                        >
+                          {action}
+                        </button>
+                      ))}
+                      {message.quickActions.length > 3 ? (
+                        <details className="fd-consultor-more-actions">
+                          <summary>Mais opções</summary>
+                          <div className="fd-consultor-more-actions-list">
+                            {message.quickActions.slice(3).map((action) => (
+                              <button
+                                key={`${message.id}-extra-${action}`}
+                                type="button"
+                                className="fd-mini-btn"
+                                onClick={() => {
+                                  void submitQuestion(ACTION_TO_QUESTION[action] ?? action);
+                                }}
+                              >
+                                {action}
+                              </button>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )
+          )}
 
           {isResponding ? (
-            <div className="fd-chat-bubble-wrap assistant">
-              <div className="fd-chat-bubble assistant loading">
+            <div className="fd-chat-bubble-wrap assistant fd-consultor-assistant-row">
+              <img
+                src="/mascoterosto.png"
+                alt="Consultor Fluxo"
+                className="fd-consultor-avatar"
+                onError={(event) => {
+                  event.currentTarget.style.display = "none";
+                }}
+              />
+              <div className="fd-chat-bubble assistant loading fd-consultor-chat-card">
                 <span className="fd-loading-chip">consultor analisando seu contexto...</span>
               </div>
             </div>

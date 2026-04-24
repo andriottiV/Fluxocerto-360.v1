@@ -34,7 +34,14 @@ type ServiceSupplyLink = {
   unitsPerService: number;
 };
 
+type PricingPaymentMode = "pix" | "debito" | "credito";
+
 const COST_CATEGORIES = ["transporte", "alimentacao", "outros"] as const;
+const PRICING_RATES: Record<PricingPaymentMode, number> = {
+  pix: 0.0049,
+  debito: 0.0165,
+  credito: 0.0355,
+};
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -88,6 +95,12 @@ export default function ItensModule() {
     date: todayIso(),
   });
 
+  const [pricingForm, setPricingForm] = useState({
+    cost: "",
+    desiredProfit: "",
+    paymentMethod: "pix" as PricingPaymentMode,
+  });
+
   const totalSuppliesValue = useMemo(
     () => supplies.reduce((sum, item) => sum + item.totalValue, 0),
     [supplies]
@@ -133,6 +146,37 @@ export default function ItensModule() {
       totalUnits: products.reduce((sum, item) => sum + item.soldCount, 0),
     };
   }, [products]);
+
+  const pricingSimulation = useMemo(() => {
+    const cost = toNumber(pricingForm.cost);
+    const desiredProfit = toNumber(pricingForm.desiredProfit);
+    const feeRate = PRICING_RATES[pricingForm.paymentMethod];
+    const denominator = 1 - feeRate;
+
+    if (cost <= 0 || desiredProfit < 0 || denominator <= 0) {
+      return {
+        valid: false,
+        finalPrice: 0,
+        feeValue: 0,
+        netProfit: 0,
+        feeRate,
+        denominator,
+      };
+    }
+
+    const finalPrice = Number(((cost + desiredProfit) / denominator).toFixed(2));
+    const feeValue = Number((finalPrice * feeRate).toFixed(2));
+    const netProfit = Number((finalPrice - cost - feeValue).toFixed(2));
+
+    return {
+      valid: true,
+      finalPrice,
+      feeValue,
+      netProfit,
+      feeRate,
+      denominator,
+    };
+  }, [pricingForm.cost, pricingForm.desiredProfit, pricingForm.paymentMethod]);
 
   const addSupply = () => {
     const totalValue = toNumber(supplyForm.totalValue);
@@ -328,6 +372,20 @@ export default function ItensModule() {
     toast.success("Custo externo registrado e descontado do PJ");
   };
 
+  const applySuggestedPrice = () => {
+    if (!pricingSimulation.valid) {
+      toast.error("Preencha os valores para simular.");
+      return;
+    }
+
+    setProductForm((prev) => ({
+      ...prev,
+      costPrice: pricingForm.cost,
+      salePrice: pricingSimulation.finalPrice.toFixed(2),
+    }));
+    toast.success("Preço aplicado no formulário.");
+  };
+
   return (
     <section className="fd-items-section">
       <article className="fd-panel fd-glass">
@@ -462,6 +520,68 @@ export default function ItensModule() {
         <div className="fd-panel-head">
           <h2>Itens para Venda</h2>
           <p>Lucro por produto e controle de consignado</p>
+        </div>
+
+        <div className="fd-subsection">
+          <h3>
+            <Wallet className="h-4 w-4" /> Simulador de preço
+          </h3>
+          <div className="fd-items-form-grid">
+            <input
+              className="fd-pot-input"
+              type="number"
+              min={0.01}
+              step={0.01}
+              placeholder="Quanto você gasta nesse serviço/produto?"
+              value={pricingForm.cost}
+              onChange={(event) => setPricingForm((prev) => ({ ...prev, cost: event.target.value }))}
+            />
+            <input
+              className="fd-pot-input"
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="Quanto você quer ganhar nesse serviço/produto?"
+              value={pricingForm.desiredProfit}
+              onChange={(event) => setPricingForm((prev) => ({ ...prev, desiredProfit: event.target.value }))}
+            />
+            <select
+              className="fd-pot-input"
+              value={pricingForm.paymentMethod}
+              onChange={(event) =>
+                setPricingForm((prev) => ({ ...prev, paymentMethod: event.target.value as PricingPaymentMode }))
+              }
+            >
+              <option value="pix">PIX (0,49%)</option>
+              <option value="debito">Débito (1,65%)</option>
+              <option value="credito">Crédito (3,55%)</option>
+            </select>
+          </div>
+
+          {pricingSimulation.valid ? (
+            <div className="fd-items-kpi-strip">
+              <div>
+                <span>Você deveria cobrar:</span>
+                <strong style={{ fontSize: "1.25rem" }}>💰 {formatCurrency(pricingSimulation.finalPrice)}</strong>
+              </div>
+              <div>
+                <span>Você vai ganhar:</span>
+                <strong>{formatCurrency(pricingSimulation.netProfit)}</strong>
+              </div>
+              <div>
+                <span>Taxas cobradas:</span>
+                <strong>{formatCurrency(pricingSimulation.feeValue)}</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="fd-settings-form-placeholder">
+              Digite quanto custa e quanto você quer ganhar para ver o valor ideal de cobrança.
+            </div>
+          )}
+
+          <button type="button" className="fd-primary-btn" onClick={applySuggestedPrice}>
+            Usar esse preço
+          </button>
         </div>
 
         <div className="fd-items-form-grid">
