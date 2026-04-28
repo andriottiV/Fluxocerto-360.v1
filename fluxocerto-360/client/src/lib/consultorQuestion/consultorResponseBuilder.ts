@@ -1,5 +1,5 @@
 ﻿import { type FinancialAdvisorResult } from "@/lib/financialAdvisor";
-import { parseDateSafe } from "@/lib/finance";
+import { calculateTotals, parseDateSafe } from "@/lib/finance";
 import { TransactionType, type Transaction } from "@/lib/types";
 
 import type { ConsultorQuestionIntent } from "./consultorIntentParser";
@@ -44,14 +44,7 @@ function currentMonthNet(transactions: Transaction[]) {
     return parsed && parsed.getMonth() === now.getMonth() && parsed.getFullYear() === now.getFullYear();
   });
 
-  const income = sameMonth
-    .filter((tx) => tx.type === TransactionType.INCOME)
-    .reduce((sum, tx) => sum + tx.amount, 0);
-  const expense = sameMonth
-    .filter((tx) => tx.type === TransactionType.EXPENSE)
-    .reduce((sum, tx) => sum + tx.amount, 0);
-
-  return income - expense;
+  return calculateTotals(sameMonth).periodBalance;
 }
 
 function buildContext(input: BuildAnswerInput) {

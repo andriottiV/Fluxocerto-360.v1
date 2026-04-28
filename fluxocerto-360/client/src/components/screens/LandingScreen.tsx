@@ -33,13 +33,13 @@ export default function LandingScreen() {
 
   return (
     <div
-      className="relative min-h-screen max-w-full overflow-x-hidden bg-[#020b08] text-[#f6fffb] box-border [&_*]:box-border"
+      className="landing-page relative min-h-screen max-w-full overflow-x-hidden bg-[#020b08] text-[#f6fffb] box-border [&_*]:box-border"
       style={{ fontFamily: "Inter, Poppins, Segoe UI, Roboto, sans-serif" }}
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_6%,rgba(18,214,122,0.18),transparent_35%),radial-gradient(circle_at_78%_18%,rgba(34,197,94,0.14),transparent_40%),radial-gradient(circle_at_52%_115%,rgba(18,214,122,0.11),transparent_50%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,#020b08,#03110c_44%,#020b08)]" />
 
-      <main className="relative z-10 mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 lg:px-16 xl:px-24">
+      <main className="landing-main relative z-10 mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 lg:px-16 xl:px-24">
         <header className="mb-7 flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center">
             <img
@@ -61,9 +61,9 @@ export default function LandingScreen() {
           </button>
         </header>
 
-        <section className="grid items-start gap-10 lg:grid-cols-[minmax(0,640px)_minmax(0,520px)] lg:justify-between xl:gap-12">
-          <div className="w-full max-w-[640px]">
-            <h1 className="max-w-[640px] text-balance text-[2rem] font-black leading-[1.04] tracking-[-0.02em] text-white sm:text-[2.9rem] lg:text-[3.65rem]">
+        <section className="landing-hero grid items-start gap-10 lg:grid-cols-[minmax(0,640px)_minmax(0,520px)] lg:justify-between xl:gap-12">
+          <div className="landing-hero-copy w-full max-w-[640px]">
+            <h1 className="max-w-[640px] text-balance text-[clamp(2.625rem,10vw,3.65rem)] font-black leading-[0.98] tracking-[-0.02em] text-white">
               Pare de misturar seu dinheiro e descubra quanto você <span className="text-[#5ff16d]">realmente ganha.</span>
             </h1>
 
@@ -97,7 +97,7 @@ export default function LandingScreen() {
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-[360px] overflow-visible py-3 sm:max-w-[420px] lg:mx-0 lg:ml-auto lg:max-w-[420px] xl:max-w-[520px]">
+          <div className="landing-hero-visual relative mx-auto w-full max-w-[360px] overflow-visible py-3 sm:max-w-[420px] lg:mx-0 lg:ml-auto lg:max-w-[420px] xl:max-w-[520px]">
             <div className="pointer-events-none absolute left-1/2 top-[47%] h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[rgba(91,241,111,0.62)] sm:h-[380px] sm:w-[380px] xl:h-[430px] xl:w-[430px]" />
             <div className="pointer-events-none absolute left-1/2 top-[47%] h-[330px] w-[330px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(20,204,110,0.30),rgba(20,204,110,0.08)_44%,transparent_72%)] blur-lg sm:h-[370px] sm:w-[370px] xl:h-[420px] xl:w-[420px]" />
             <div className="pointer-events-none absolute right-2 top-[150px] h-[140px] w-[140px] rounded-full bg-[radial-gradient(rgba(102,255,170,0.30)_1px,transparent_1px)] bg-[size:10px_10px] opacity-35 sm:h-[160px] sm:w-[160px] xl:h-[190px] xl:w-[190px]" />
@@ -130,7 +130,7 @@ export default function LandingScreen() {
               </div>
             </div>
 
-            <div className="relative z-20 mx-auto mt-4 grid w-full max-w-[336px] grid-cols-3 gap-2 sm:max-w-[372px] sm:gap-2.5 lg:absolute lg:left-1/2 lg:top-[308px] lg:mt-0 lg:w-[378px] lg:max-w-[378px] lg:-translate-x-1/2 xl:top-[330px] xl:w-[444px] xl:max-w-[444px]">
+            <div className="landing-floating-pots relative z-20 mx-auto mt-4 grid w-full max-w-[336px] grid-cols-3 gap-2 sm:max-w-[372px] sm:gap-2.5 lg:absolute lg:left-1/2 lg:top-[308px] lg:mt-0 lg:w-[378px] lg:max-w-[378px] lg:-translate-x-1/2 xl:top-[330px] xl:w-[444px] xl:max-w-[444px]">
               <div className="rounded-xl border border-[rgba(45,204,113,0.28)] bg-[rgba(8,33,24,0.86)] p-2 backdrop-blur-xl sm:rounded-2xl sm:p-2.5 xl:p-3">
                 <div className="mb-1 inline-flex h-6 w-6 items-center justify-center rounded-lg bg-[rgba(40,215,117,0.18)] text-[#7eff96] sm:h-7 sm:w-7 sm:rounded-xl xl:h-8 xl:w-8">
                   <User className="h-4 w-4" />
@@ -156,7 +156,7 @@ export default function LandingScreen() {
               </div>
             </div>
 
-            <div className="absolute bottom-[20px] left-1/2 z-20 w-[96%] -translate-x-1/2 rounded-2xl border border-[rgba(53,214,120,0.20)] bg-[rgba(9,31,23,0.86)] px-3 py-2.5 backdrop-blur-xl sm:bottom-[24px] sm:px-4 sm:py-3 xl:bottom-[28px]">
+            <div className="landing-mockup-summary absolute bottom-[20px] left-1/2 z-20 w-[96%] -translate-x-1/2 rounded-2xl border border-[rgba(53,214,120,0.20)] bg-[rgba(9,31,23,0.86)] px-3 py-2.5 backdrop-blur-xl sm:bottom-[24px] sm:px-4 sm:py-3 xl:bottom-[28px]">
               <div className="grid grid-cols-3 gap-2 text-center sm:gap-3">
                 <div>
                   <p className="text-[11px] font-semibold text-[#31d86f] sm:text-[12px] xl:text-[13px]">Entradas</p>
@@ -175,8 +175,8 @@ export default function LandingScreen() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] px-5 py-4 shadow-[0_12px_34px_rgba(0,0,0,0.30)] backdrop-blur-[12px]">
-          <h2 className="text-[42px] font-black leading-none tracking-[-0.02em] text-white sm:text-[34px] lg:text-[44px]">Você trabalha... mas não vê o dinheiro</h2>
+        <section className="landing-problem mt-6 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] px-5 py-4 shadow-[0_12px_34px_rgba(0,0,0,0.30)] backdrop-blur-[12px]">
+          <h2 className="text-[clamp(1.9rem,8.5vw,2.75rem)] font-black leading-[1.05] tracking-[-0.02em] text-white">Você trabalha... mas não vê o dinheiro</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0">
             {PROBLEM_ITEMS.map((item, index) => {
               const Icon = item.icon;
@@ -195,13 +195,13 @@ export default function LandingScreen() {
           </div>
         </section>
 
-        <section className="mt-4 grid gap-4 xl:grid-cols-4">
+        <section className="landing-cards-grid mt-4 grid gap-4 xl:grid-cols-4">
           <article className="relative overflow-hidden rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[30px] font-black leading-tight text-[#62ef79] sm:text-[22px]">O FluxoCerto organiza tudo pra você</h3>
+            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-[#62ef79]">O FluxoCerto organiza tudo pra você</h3>
             <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">
               Com um sistema simples, você separa seu dinheiro automaticamente e entende exatamente o que é seu, o que é do negócio e o que pode gastar.
             </p>
-            <div className="absolute bottom-3 right-3 h-[96px] w-[82px] rotate-6 rounded-2xl border border-[rgba(101,241,116,0.30)] bg-[linear-gradient(160deg,rgba(16,64,42,0.8),rgba(9,30,22,0.6))] p-3">
+            <div className="landing-card-illustration absolute bottom-3 right-3 h-[96px] w-[82px] rotate-6 rounded-2xl border border-[rgba(101,241,116,0.30)] bg-[linear-gradient(160deg,rgba(16,64,42,0.8),rgba(9,30,22,0.6))] p-3">
               <div className="mt-7 grid grid-cols-4 gap-1">
                 <span className="h-4 rounded-sm bg-[#3ed76f]" />
                 <span className="h-7 rounded-sm bg-[#53f178]" />
@@ -212,7 +212,7 @@ export default function LandingScreen() {
           </article>
 
           <article className="rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[30px] font-black leading-tight text-white sm:text-[22px]">Seu dinheiro separado do jeito certo</h3>
+            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-white">Seu dinheiro separado do jeito certo</h3>
             <ul className="mt-4 space-y-4 text-[15px]">
               <li className="flex gap-3 text-[rgba(212,244,227,0.87)]"><span className="mt-1 h-3 w-3 rounded-full bg-[#62ef79]" />Pessoal<br /><span className="text-[rgba(185,228,207,0.8)]">Seu dinheiro para viver</span></li>
               <li className="flex gap-3 text-[rgba(212,244,227,0.87)]"><span className="mt-1 h-3 w-3 rounded-full bg-[#40a8ff]" />Negócio<br /><span className="text-[rgba(185,228,207,0.8)]">O dinheiro que mantém seu trabalho funcionando</span></li>
@@ -221,7 +221,7 @@ export default function LandingScreen() {
           </article>
 
           <article className="rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[30px] font-black leading-tight text-[#62ef79] sm:text-[22px]">Saiba quanto você realmente ganha</h3>
+            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-[#62ef79]">Saiba quanto você realmente ganha</h3>
             <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">
               O app considera taxas, custos e gastos reais. Você não vê só o dinheiro que entrou, mas o que sobrou de verdade.
             </p>
@@ -236,7 +236,7 @@ export default function LandingScreen() {
           </article>
 
           <article className="relative overflow-hidden rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[30px] font-black leading-tight text-white sm:text-[22px]">Se você trabalha por conta, isso aqui é pra você</h3>
+            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-white">Se você trabalha por conta, isso aqui é pra você</h3>
             <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">Chega de viver no escuro financeiro. Comece hoje a organizar sua vida e seu negócio.</p>
             <button
               type="button"
@@ -257,7 +257,7 @@ export default function LandingScreen() {
           </article>
         </section>
 
-        <section className="mt-4 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.72)] px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
+        <section className="landing-guarantees mt-4 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.72)] px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
           <div className="grid gap-2 lg:grid-cols-3">
             <div className="flex items-center gap-3 rounded-xl bg-[rgba(8,32,23,0.66)] px-4 py-3">
               <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(39,205,118,0.2)] text-[#6ef58a]"><Lock className="h-4 w-4" /></div>

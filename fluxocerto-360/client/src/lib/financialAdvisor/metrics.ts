@@ -1,4 +1,4 @@
-import { parseDateSafe } from "@/lib/finance";
+import { getTransactionNetAmount, parseDateSafe } from "@/lib/finance";
 import { PotType, TransactionType, type Pot, type Transaction } from "@/lib/types";
 
 import type {
@@ -63,7 +63,9 @@ export function calculateTotalExpense(transactions: Transaction[]) {
 }
 
 export function calculateNetProfit(transactions: Transaction[]) {
-  return calculateTotalIncome(transactions) - calculateTotalExpense(transactions);
+  return transactions
+    .filter((transaction) => transaction.type === TransactionType.INCOME)
+    .reduce((sum, transaction) => sum + getTransactionNetAmount(transaction), 0);
 }
 
 function isFixedCategory(category: string) {
@@ -134,7 +136,8 @@ export function calculateStrongestDays(transactions: Transaction[], count = 2) {
     const parsed = parseDateSafe(transaction.date);
     if (!parsed) return;
     const weekday = parsed.getDay();
-    const signedAmount = transaction.type === TransactionType.INCOME ? transaction.amount : -transaction.amount;
+    const signedAmount =
+      transaction.type === TransactionType.INCOME ? getTransactionNetAmount(transaction) : -transaction.amount;
     totals.set(weekday, (totals.get(weekday) ?? 0) + signedAmount);
   });
 
@@ -151,7 +154,8 @@ export function calculateWeakestDays(transactions: Transaction[], count = 2) {
     const parsed = parseDateSafe(transaction.date);
     if (!parsed) return;
     const weekday = parsed.getDay();
-    const signedAmount = transaction.type === TransactionType.INCOME ? transaction.amount : -transaction.amount;
+    const signedAmount =
+      transaction.type === TransactionType.INCOME ? getTransactionNetAmount(transaction) : -transaction.amount;
     totals.set(weekday, (totals.get(weekday) ?? 0) + signedAmount);
   });
 
@@ -255,7 +259,7 @@ export function buildFinancialSummary(params: {
 function buildAreaSummary(transactions: Transaction[], currentBalance: number) {
   const income = calculateTotalIncome(transactions);
   const expense = calculateTotalExpense(transactions);
-  const net = income - expense;
+  const net = calculateNetProfit(transactions);
   const fixedExpenses = calculateFixedExpenses(transactions);
   const variableExpenses = calculateVariableExpenses(transactions);
   return { income, expense, net, fixedExpenses, variableExpenses, currentBalance };

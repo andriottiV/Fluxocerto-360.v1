@@ -1,8 +1,10 @@
 import { useMemo } from "react";
 
 import { useApp } from "@/contexts/AppContext";
+import { getUserOnboardingData } from "@/lib/auth";
 import SummaryCard from "@/components/dashboard/shared/SummaryCard";
 import { calculateTotals, isInCurrentMonth, parseDateSafe } from "@/lib/finance";
+import { generateProactiveInsights } from "@/lib/consultorInsights";
 import { PotType } from "@/lib/types";
 import type { DashboardIntelligence } from "@/lib/dashboardIntelligence";
 import { formatCurrency } from "@/lib/utils";
@@ -34,7 +36,7 @@ function areaPath(points: Array<{ x: number; y: number }>, baseY: number) {
 }
 
 export default function InicioModule({ userName, intelligence }: InicioModuleProps) {
-  const { pots, transactions, potDistribution, achievements } = useApp();
+  const { pots, transactions, potDistribution, achievements, user, paymentAccounts, clients, salesItems, costs } = useApp();
 
   const monthTransactions = useMemo(
     () =>
@@ -61,6 +63,25 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     return "Seu caixa está estável hoje, mas vale manter atenção aos pequenos gastos recorrentes.";
   }, [intelligence.greetingTone]);
 
+  const onboardingData = useMemo(
+    () => (user?.id ? getUserOnboardingData(user.id) : {}),
+    [user?.id]
+  );
+
+  const proactiveSummary = useMemo(
+    () =>
+      generateProactiveInsights({
+        transactions,
+        pots,
+        paymentAccounts,
+        fixedExpenses: onboardingData.fixedExpenses ?? [],
+        clients,
+        salesItems,
+        costs,
+      }).slice(0, 2),
+    [transactions, pots, paymentAccounts, onboardingData.fixedExpenses, clients, salesItems, costs]
+  );
+
   const evolutionSeries = useMemo(() => {
     const now = new Date();
     const days = Array.from({ length: 7 }).map((_, offset) => {
@@ -86,7 +107,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
         label: DAY_LABELS[date.getDay()],
         income: totals.income,
         expense: totals.expense,
-        net: totals.net,
+        net: totals.periodBalance,
       };
     });
 
@@ -201,6 +222,16 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
 
       <section className="fd-consultor-brief">
         <p>{consultorHint}</p>
+        {proactiveSummary.length > 0 ? (
+          <div className="fd-consultor-brief-list">
+            {proactiveSummary.map((item) => (
+              <div key={item.id} className={`fd-consultor-brief-item ${item.level}`}>
+                <strong>{item.title}</strong>
+                <span>{item.message}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="fd-panel fd-glass">
@@ -232,7 +263,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       <section className="fd-summary-v2-grid fd-summary-v2-grid-compact">
         <SummaryCard label="Entradas" value={formatCurrency(monthTotals.income)} tone="success" />
         <SummaryCard label="Saidas" value={formatCurrency(monthTotals.expense)} tone="danger" />
-        <SummaryCard label="Lucro liquido" value={formatCurrency(monthTotals.net)} helper="Entradas - Saidas" />
+        <SummaryCard label="Lucro liquido" value={formatCurrency(monthTotals.net)} helper="Entradas - taxas" />
       </section>
 
       <section className="fd-grid-two fd-home-visual-grid">

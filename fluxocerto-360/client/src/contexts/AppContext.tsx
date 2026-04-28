@@ -117,6 +117,52 @@ function clampCurrency(value: number) {
   return Number(Math.max(0, value).toFixed(2));
 }
 
+function resolveConfiguredFeePercent(transaction: TransactionInput, feeSettings: PaymentFeeSetting[]) {
+  const fee = transaction.paymentMethod
+    ? feeSettings.find((item) => item.method === transaction.paymentMethod)
+    : undefined;
+  return fee?.enabled ? Number(Math.max(0, fee.feePercent).toFixed(2)) : 0;
+}
+
+function normalizeNewIncomeAmounts(transaction: TransactionInput, feeSettings: PaymentFeeSetting[]) {
+  const grossAmount = clampCurrency(Math.abs(Number(transaction.grossAmount ?? transaction.amount)));
+  const feePercent = resolveConfiguredFeePercent(transaction, feeSettings);
+  const feeAmount = clampCurrency(Math.min(grossAmount, grossAmount * (feePercent / 100)));
+  return {
+    amount: grossAmount,
+    grossAmount,
+    feePercent,
+    feeAmount,
+    netAmount: clampCurrency(grossAmount - feeAmount),
+  };
+}
+
+function normalizeStoredIncomeAmounts(transaction: TransactionInput, feeSettings: PaymentFeeSetting[]) {
+  const grossAmount = clampCurrency(Math.abs(Number(transaction.grossAmount ?? transaction.amount)));
+  const feePercent = Number(transaction.feePercent);
+  const feeAmount = Number(transaction.feeAmount);
+  const netAmount = Number(transaction.netAmount);
+  const configuredFeePercent = resolveConfiguredFeePercent(transaction, feeSettings);
+  const normalizedFeePercent =
+    Number.isFinite(feePercent) && feePercent >= 0 && (feePercent > 0 || configuredFeePercent === 0)
+      ? Number(feePercent.toFixed(2))
+      : configuredFeePercent;
+  const normalizedFeeAmount =
+    Number.isFinite(feeAmount) && (feeAmount > 0 || normalizedFeePercent === 0)
+      ? clampCurrency(Math.min(grossAmount, feeAmount))
+      : clampCurrency(Math.min(grossAmount, grossAmount * (normalizedFeePercent / 100)));
+
+  return {
+    amount: grossAmount,
+    grossAmount,
+    feePercent: normalizedFeePercent,
+    feeAmount: normalizedFeeAmount,
+    netAmount: Number.isFinite(netAmount)
+      ? clampCurrency(Math.min(netAmount, grossAmount - normalizedFeeAmount))
+      : clampCurrency(grossAmount - normalizedFeeAmount),
+  };
+}
+
 type OnboardingPotBlueprint = {
   personal: Pick<Pot, "name" | "icon">;
   business: Pick<Pot, "name" | "icon">;
@@ -283,26 +329,93 @@ function attachOwner<T extends { ownerId?: string }>(items: T[], ownerId: string
     .map((item) => ({ ...item, ownerId }));
 }
 
+function getTransactionMovementAmount(transaction: Transaction) {
+  if (transaction.type === TransactionType.INCOME) {
+    return clampCurrency(Number(transaction.netAmount ?? transaction.amount));
+  }
+  return clampCurrency(Number(transaction.amount));
+}
+
+function rebuildFinancialBalances(
+  accounts: Account[],
+  pots: Pot[],
+  transactions: Transaction[],
+  distribution: PotDistribution
+) {
+  const nextAccounts = accounts.map((account) => ({ ...account, balance: 0 }));
+  const nextPots = pots.map((pot) => ({ ...pot, balance: 0 }));
+
+  transactions.forEach((transaction) => {
+    const movementAmount = getTransactionMovementAmount(transaction);
+
+    if (transaction.type === TransactionType.INCOME) {
+      nextAccounts.forEach((account) => {
+        if (account.name === transaction.account) {
+          account.balance = Number((account.balance + movementAmount).toFixed(2));
+        }
+      });
+
+      const personalPot = nextPots.find((pot) => pot.type === PotType.PERSONAL);
+      const businessPot = nextPots.find((pot) => pot.type === PotType.BUSINESS);
+      const reservePot = nextPots.find((pot) => pot.type === PotType.RESERVE);
+
+      if (personalPot && businessPot && reservePot) {
+        const personalAmount = Number(((movementAmount * distribution.personal) / 100).toFixed(2));
+        const businessAmount = Number(((movementAmount * distribution.business) / 100).toFixed(2));
+        const reserveAmount = Number((movementAmount - personalAmount - businessAmount).toFixed(2));
+        personalPot.balance = Number((personalPot.balance + personalAmount).toFixed(2));
+        businessPot.balance = Number((businessPot.balance + businessAmount).toFixed(2));
+        reservePot.balance = Number((reservePot.balance + reserveAmount).toFixed(2));
+        return;
+      }
+    }
+
+    const target = transaction.potId
+      ? nextPots.find((pot) => pot.id === transaction.potId)
+      : resolvePotByType(transaction.type, nextPots);
+
+    if (!target) return;
+    const signedAmount = transaction.type === TransactionType.INCOME ? movementAmount : -movementAmount;
+    target.balance = Number((target.balance + signedAmount).toFixed(2));
+  });
+
+  return { accounts: nextAccounts, pots: nextPots };
+}
+
 function normalizeOwnedData(userId: string, data: UserScopedData): UserScopedData {
   const distribution = normalizePotDistribution(data.potDistribution);
+  const paymentFeeSettings = attachOwner(data.paymentFeeSettings, userId);
+  const normalizedAccounts = attachOwner(data.accounts, userId);
+  const normalizedPots = attachOwner(data.pots, userId).map((pot) => ({
+    ...pot,
+    percentage: Number.isFinite(pot.percentage) ? pot.percentage : getPotPercentage(pot.type, distribution),
+    goalValue: Number.isFinite(pot.goalValue) ? pot.goalValue : clampCurrency(pot.limit ?? 0),
+    limit: clampCurrency(pot.limit ?? pot.goalValue ?? 0),
+  }));
+  const normalizedTransactions = attachOwner(data.transactions, userId).map((transaction) => {
+    if (transaction.type !== TransactionType.INCOME) return transaction;
+    return {
+      ...transaction,
+      ...normalizeStoredIncomeAmounts(transaction, paymentFeeSettings),
+    };
+  });
+  const rebuilt = normalizedTransactions.length
+    ? rebuildFinancialBalances(normalizedAccounts, normalizedPots, normalizedTransactions, distribution)
+    : { accounts: normalizedAccounts, pots: normalizedPots };
+
   return {
-    accounts: attachOwner(data.accounts, userId),
-    pots: attachOwner(data.pots, userId).map((pot) => ({
-      ...pot,
-      percentage: Number.isFinite(pot.percentage) ? pot.percentage : getPotPercentage(pot.type, distribution),
-      goalValue: Number.isFinite(pot.goalValue) ? pot.goalValue : clampCurrency(pot.limit ?? 0),
-      limit: clampCurrency(pot.limit ?? pot.goalValue ?? 0),
-    })),
+    accounts: rebuilt.accounts,
+    pots: rebuilt.pots,
     services: attachOwner(data.services, userId),
     clients: attachOwner(data.clients, userId),
-    transactions: attachOwner(data.transactions, userId),
+    transactions: normalizedTransactions,
     paymentAccounts: attachOwner(data.paymentAccounts, userId),
     insights: attachOwner(data.insights, userId),
     notifications: attachOwner(data.notifications, userId),
     achievements: attachOwner(data.achievements, userId),
     salesItems: attachOwner(data.salesItems, userId),
     costs: attachOwner(data.costs, userId),
-    paymentFeeSettings: attachOwner(data.paymentFeeSettings, userId),
+    paymentFeeSettings,
     adjustmentAccounts: attachOwner(data.adjustmentAccounts, userId),
     potDistribution: distribution,
   };
@@ -625,12 +738,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: validationError };
     }
 
-    const normalizedAmount = Math.abs(Number(transactionInput.amount));
+    const normalizedAmount = clampCurrency(Math.abs(Number(transactionInput.amount)));
+    const incomeAmounts =
+      transactionInput.type === TransactionType.INCOME
+        ? normalizeNewIncomeAmounts(transactionInput, paymentFeeSettings)
+        : null;
+    const movementAmount = incomeAmounts?.netAmount ?? normalizedAmount;
     const transaction: Transaction = {
       ...transactionInput,
       id: transactionInput.id ?? createId("tx"),
       ownerId: user?.id,
-      amount: normalizedAmount,
+      ...(incomeAmounts ?? { amount: normalizedAmount }),
       description: transactionInput.description.trim(),
       category: transactionInput.category.trim(),
       account: transactionInput.account.trim(),
@@ -638,16 +756,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       notes: transactionInput.notes?.trim() || undefined,
     };
 
-    const signal = transaction.type === TransactionType.INCOME ? 1 : -1;
-
     setTransactions((prev) => [transaction, ...prev]);
 
     setAccounts((prev) =>
       prev.map((account) =>
-        account.name === transaction.account
+        transaction.type === TransactionType.INCOME && account.name === transaction.account
           ? {
               ...account,
-              balance: Number((account.balance + normalizedAmount * signal).toFixed(2)),
+              balance: Number((account.balance + movementAmount).toFixed(2)),
             }
           : account
       )
@@ -660,9 +776,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const reservePot = prev.find((pot) => pot.type === PotType.RESERVE);
 
         if (personalPot && businessPot && reservePot) {
-          const personalAmount = Number(((normalizedAmount * potDistribution.personal) / 100).toFixed(2));
-          const businessAmount = Number(((normalizedAmount * potDistribution.business) / 100).toFixed(2));
-          const reserveAmount = Number((normalizedAmount - personalAmount - businessAmount).toFixed(2));
+          const personalAmount = Number(((movementAmount * potDistribution.personal) / 100).toFixed(2));
+          const businessAmount = Number(((movementAmount * potDistribution.business) / 100).toFixed(2));
+          const reserveAmount = Number((movementAmount - personalAmount - businessAmount).toFixed(2));
 
           return prev.map((pot) => {
             if (pot.id === personalPot.id) {
@@ -689,14 +805,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         pot.id === target.id
           ? {
               ...pot,
-              balance: Number((pot.balance + normalizedAmount * signal).toFixed(2)),
+              balance: Number(
+                (pot.balance + (transaction.type === TransactionType.INCOME ? movementAmount : -movementAmount)).toFixed(2)
+              ),
             }
           : pot
       );
     });
 
     return { ok: true, data: transaction };
-  }, [potDistribution, user?.id]);
+  }, [paymentFeeSettings, potDistribution, user?.id]);
 
   const updateAccountBalance = useCallback((accountId: string, balance: number) => {
     setAccounts((prev) => prev.map((account) => (account.id === accountId ? { ...account, balance } : account)));

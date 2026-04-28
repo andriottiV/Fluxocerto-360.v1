@@ -3,7 +3,10 @@ import { Transaction, TransactionType } from "@/lib/types";
 export type FinanceTotals = {
   income: number;
   expense: number;
+  fees: number;
+  netIncome: number;
   net: number;
+  periodBalance: number;
 };
 
 export function parseDateSafe(date: string) {
@@ -26,13 +29,43 @@ export function isInCurrentMonth(date: Date, now = new Date()) {
 export function calculateTotals(transactions: Transaction[]): FinanceTotals {
   const income = transactions
     .filter((tx) => tx.type === TransactionType.INCOME)
-    .reduce((sum, tx) => sum + tx.amount, 0);
+    .reduce((sum, tx) => sum + getTransactionGrossAmount(tx), 0);
 
   const expense = transactions
     .filter((tx) => tx.type === TransactionType.EXPENSE)
     .reduce((sum, tx) => sum + tx.amount, 0);
 
-  return { income, expense, net: income - expense };
+  const fees = transactions
+    .filter((tx) => tx.type === TransactionType.INCOME)
+    .reduce((sum, tx) => sum + getTransactionFeeAmount(tx), 0);
+
+  const netIncome = transactions
+    .filter((tx) => tx.type === TransactionType.INCOME)
+    .reduce((sum, tx) => sum + getTransactionNetAmount(tx), 0);
+
+  return { income, expense, fees, netIncome, net: netIncome, periodBalance: netIncome - expense };
+}
+
+export function getTransactionGrossAmount(transaction: Transaction) {
+  if (transaction.type !== TransactionType.INCOME) return Math.max(0, transaction.amount);
+  const gross = Number(transaction.grossAmount ?? transaction.amount);
+  return Number.isFinite(gross) ? Math.max(0, gross) : Math.max(0, transaction.amount);
+}
+
+export function getTransactionNetAmount(transaction: Transaction) {
+  if (transaction.type !== TransactionType.INCOME) return Math.max(0, transaction.amount);
+  const net = Number(transaction.netAmount);
+  if (Number.isFinite(net)) return Math.max(0, net);
+
+  const gross = getTransactionGrossAmount(transaction);
+  return Number(Math.max(0, gross - getTransactionFeeAmount(transaction)).toFixed(2));
+}
+
+export function getTransactionFeeAmount(transaction: Transaction) {
+  if (transaction.type !== TransactionType.INCOME) return 0;
+  const fee = Number(transaction.feeAmount);
+  if (Number.isFinite(fee)) return Math.max(0, fee);
+  return 0;
 }
 
 export function sortTransactionsByDateDesc(transactions: Transaction[]) {
@@ -48,7 +81,7 @@ export function buildDailyTotals(transactions: Transaction[]) {
 
   transactions.forEach((tx) => {
     const prev = map.get(tx.date) ?? 0;
-    const signedAmount = tx.type === TransactionType.INCOME ? tx.amount : -tx.amount;
+    const signedAmount = tx.type === TransactionType.INCOME ? getTransactionNetAmount(tx) : -tx.amount;
     map.set(tx.date, prev + signedAmount);
   });
 

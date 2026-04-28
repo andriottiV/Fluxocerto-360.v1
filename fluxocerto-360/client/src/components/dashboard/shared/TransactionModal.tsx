@@ -82,7 +82,7 @@ export default function TransactionModal({
   startVoiceOnOpen = false,
   onVoiceStateChange,
 }: TransactionModalProps) {
-  const { accounts, pots, services, addTransaction } = useApp();
+  const { accounts, pots, services, addTransaction, paymentFeeSettings } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [type, setType] = useState<TransactionType.INCOME | TransactionType.EXPENSE>(presetType);
 
@@ -106,6 +106,7 @@ export default function TransactionModal({
     date: todayIso(),
     potId: "",
   });
+
   const [voiceDraft, setVoiceDraft] = useState<ParsedVoiceCommand | null>(null);
   const [voicePreview, setVoicePreview] = useState<VoicePreviewForm | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
@@ -126,8 +127,32 @@ export default function TransactionModal({
   const businessPot = useMemo(() => pots.find((pot) => pot.name.toLowerCase().includes("neg")) ?? pots[0], [pots]);
   const reservePot = useMemo(() => pots.find((pot) => pot.name.toLowerCase().includes("reserv")) ?? pots[0], [pots]);
 
+  const calculateFeeData = (grossAmount: number, method?: PaymentMethod | null) => {
+    if (!method) {
+      return {
+        grossAmount: Number(grossAmount.toFixed(2)),
+        feePercent: 0,
+        feeAmount: 0,
+        netAmount: Number(grossAmount.toFixed(2)),
+      };
+    }
+
+    const fee = paymentFeeSettings.find((item) => item.method === method);
+    const feePercent = fee && fee.enabled ? fee.feePercent : 0;
+    const feeAmount = Number((grossAmount * (feePercent / 100)).toFixed(2));
+    const netAmount = Number((grossAmount - feeAmount).toFixed(2));
+
+    return {
+      grossAmount: Number(grossAmount.toFixed(2)),
+      feePercent,
+      feeAmount,
+      netAmount,
+    };
+  };
+
   useEffect(() => {
     if (!isOpen) return;
+
     setType(presetType);
     setIsSaving(false);
     setSelectedServiceId(null);
@@ -156,6 +181,7 @@ export default function TransactionModal({
 
   useEffect(() => {
     if (!isOpen || !startVoiceOnOpen || voiceAutoStarted || !voiceSupported) return;
+
     setVoiceAutoStarted(true);
     window.setTimeout(() => {
       startVoice();
@@ -164,6 +190,7 @@ export default function TransactionModal({
 
   useEffect(() => {
     if (!voiceTranscript) return;
+
     setVoiceProcessing(true);
     const draft = parseFinancialVoiceCommand(voiceTranscript);
     setVoiceDraft(draft);
@@ -181,6 +208,7 @@ export default function TransactionModal({
 
   useEffect(() => {
     if (!onVoiceStateChange) return;
+
     if (!isOpen) {
       onVoiceStateChange("idle");
       return;
@@ -190,18 +218,22 @@ export default function TransactionModal({
       onVoiceStateChange("error");
       return;
     }
+
     if (voiceListening) {
       onVoiceStateChange("listening");
       return;
     }
+
     if (voiceProcessing) {
       onVoiceStateChange("processing");
       return;
     }
+
     if (voiceDraft) {
       onVoiceStateChange("ready_for_confirmation");
       return;
     }
+
     onVoiceStateChange("idle");
   }, [isOpen, onVoiceStateChange, voiceDraft, voiceError, voiceListening, voiceProcessing]);
 
@@ -280,15 +312,23 @@ export default function TransactionModal({
       toast.error("Selecione um servico para lancamento rapido");
       return;
     }
+
     if (!servicePayment) {
       toast.error("Escolha a forma de pagamento");
       return;
     }
 
+    const feeData = calculateFeeData(selectedService.price, servicePayment);
+
     setIsSaving(true);
+
     const result = addTransaction({
       type: TransactionType.INCOME,
-      amount: selectedService.price,
+      amount: feeData.grossAmount,
+      grossAmount: feeData.grossAmount,
+      feePercent: feeData.feePercent,
+      feeAmount: feeData.feeAmount,
+      netAmount: feeData.netAmount,
       description: selectedService.name,
       category: "servico",
       date: todayIso(),
@@ -296,7 +336,7 @@ export default function TransactionModal({
       paymentMethod: servicePayment,
       potId: businessPot?.id,
       origin: "Lancamento rapido",
-    });
+    } as any);
 
     if (!result.ok) {
       toast.error(result.error ?? "Falha ao salvar entrada");
@@ -314,15 +354,23 @@ export default function TransactionModal({
       toast.error("Informe um valor valido para entrada manual");
       return;
     }
+
     if (!manualIncome.paymentMethod) {
       toast.error("Escolha a forma de pagamento");
       return;
     }
 
+    const feeData = calculateFeeData(Number(manualIncome.value), manualIncome.paymentMethod);
+
     setIsSaving(true);
+
     const result = addTransaction({
       type: TransactionType.INCOME,
-      amount: Number(manualIncome.value),
+      amount: feeData.grossAmount,
+      grossAmount: feeData.grossAmount,
+      feePercent: feeData.feePercent,
+      feeAmount: feeData.feeAmount,
+      netAmount: feeData.netAmount,
       description: manualIncome.description.trim() || "Entrada extra",
       category: manualIncome.category.trim() || "extra",
       date: manualIncome.customDateEnabled ? manualIncome.date : todayIso(),
@@ -330,7 +378,7 @@ export default function TransactionModal({
       paymentMethod: manualIncome.paymentMethod,
       potId: businessPot?.id,
       origin: manualIncome.origin.trim() || "Extra",
-    });
+    } as any);
 
     if (!result.ok) {
       toast.error(result.error ?? "Falha ao salvar entrada manual");
@@ -348,16 +396,19 @@ export default function TransactionModal({
       toast.error("Informe um valor valido para saida");
       return;
     }
+
     if (!expense.description.trim()) {
       toast.error("Descricao obrigatoria");
       return;
     }
+
     if (!expense.potId) {
       toast.error("Selecione o pote de origem");
       return;
     }
 
     setIsSaving(true);
+
     const result = addTransaction({
       type: TransactionType.EXPENSE,
       amount: Number(expense.value),
@@ -416,10 +467,7 @@ export default function TransactionModal({
           {voiceSupported ? (
             <>
               <div className="fd-voice-status-row">
-                <span
-                  className={`fd-voice-status-chip ${voiceStatus}`}
-                  aria-live="polite"
-                >
+                <span className={`fd-voice-status-chip ${voiceStatus}`} aria-live="polite">
                   {voiceStatus === "ouvindo" && "Ouvindo..."}
                   {voiceStatus === "processando" && "Processando..."}
                   {voiceStatus === "confirmacao" && "Aguardando confirmacao"}
@@ -454,11 +502,15 @@ export default function TransactionModal({
                       </span>
                     ) : null}
                   </div>
+
                   <p>"{voiceDraft.rawText}"</p>
+
                   <small>
-                    Tipo: {voiceDraft.type ?? "--"} | Valor: {voiceDraft.amount ? `R$ ${voiceDraft.amount.toFixed(2)}` : "--"} |
-                    Categoria: {voiceDraft.category ?? "--"} | Area: {voiceDraft.areaHint}
+                    Tipo: {voiceDraft.type ?? "--"} | Valor:{" "}
+                    {voiceDraft.amount ? `R$ ${voiceDraft.amount.toFixed(2)}` : "--"} | Categoria:{" "}
+                    {voiceDraft.category ?? "--"} | Area: {voiceDraft.areaHint}
                   </small>
+
                   {voiceDraft.missingFields.length > 0 ? (
                     <small className="fd-voice-error">
                       Campos incertos: {voiceDraft.missingFields.join(", ")}.
@@ -486,6 +538,7 @@ export default function TransactionModal({
                           <option value={TransactionType.EXPENSE}>saida</option>
                         </select>
                       </label>
+
                       <label>
                         Valor
                         <input
@@ -498,6 +551,7 @@ export default function TransactionModal({
                           }
                         />
                       </label>
+
                       <label>
                         Categoria
                         <input
@@ -507,6 +561,7 @@ export default function TransactionModal({
                           }
                         />
                       </label>
+
                       <label>
                         Descricao
                         <input
@@ -516,6 +571,7 @@ export default function TransactionModal({
                           }
                         />
                       </label>
+
                       <label>
                         Data
                         <input
@@ -533,6 +589,7 @@ export default function TransactionModal({
                     <button type="button" className="fd-ghost-btn" onClick={applyVoicePreview}>
                       Confirmar
                     </button>
+
                     <button
                       type="button"
                       className="fd-mini-btn"
@@ -543,6 +600,7 @@ export default function TransactionModal({
                     >
                       Cancelar comando
                     </button>
+
                     <button
                       type="button"
                       className="fd-mini-btn"
@@ -690,6 +748,7 @@ export default function TransactionModal({
                   />
                   <span>Definir data manual</span>
                 </label>
+
                 {manualIncome.customDateEnabled ? (
                   <label className="fd-inline-date">
                     <CalendarDays className="h-4 w-4" />

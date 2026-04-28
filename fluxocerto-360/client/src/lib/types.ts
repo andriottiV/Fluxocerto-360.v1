@@ -26,7 +26,7 @@ export type UserRole = "admin" | "tester";
 export type UserStatus = "pending" | "active" | "blocked";
 
 export type AccountTypeLink = "pf" | "pj";
-export type PaymentMethod = "dinheiro" | "pix" | "debito" | "credito" | "transferencia";
+export type PaymentMethod = "dinheiro" | "pix" | "debito" | "credito" | "voucher" | "alimentacao" | "transferencia";
 
 export enum TransactionType {
   INCOME = "entrada",
@@ -136,8 +136,16 @@ export interface Transaction {
   potId?: string;
   accountTypeLink?: AccountTypeLink;
   paymentMethod?: PaymentMethod;
+  grossAmount?: number;
+  feePercent?: number;
+  feeAmount?: number;
+  netAmount?: number;
   clientId?: string;
   clientName?: string;
+  serviceName?: string;
+  paymentStatus?: "pago" | "pendente" | "cancelado";
+  paidAt?: string;
+  dueDate?: string;
 }
 
 export type TransactionInput = Omit<Transaction, "id"> & { id?: string };
@@ -204,7 +212,7 @@ export interface Cost {
   status: "pago" | "pendente";
 }
 
-export type PaymentFeeMethod = "credito" | "debito" | "voucher" | "alimentacao" | "pix";
+export type PaymentFeeMethod = PaymentMethod;
 
 export interface PaymentFeeSetting {
   method: PaymentFeeMethod;

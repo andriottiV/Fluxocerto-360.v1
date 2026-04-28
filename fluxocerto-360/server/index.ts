@@ -3,6 +3,7 @@ import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createFinanceRouter } from "./finance-api";
+import { createFluxAgentRouter } from "./flux-agent-api";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +12,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   app.use(express.json());
+  app.use("/api", createFluxAgentRouter());
   app.use("/api/v1", createFinanceRouter());
 
   // Serve static files from dist/public in production

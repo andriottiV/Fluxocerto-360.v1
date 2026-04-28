@@ -1,8 +1,19 @@
-﻿import type { FinancialAdvisorResult } from "@/lib/financialAdvisor";
-import type { Transaction } from "@/lib/types";
+import type { FinancialAdvisorResult } from "@/lib/financialAdvisor";
+import type { AdjustmentAccount, Client, Pot, Service, Transaction } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
 import { answerConsultorQuestion, type ConsultorQuestionAnswer } from "./consultorQuestionEngine";
+import {
+  chooseFluxTone,
+  detectUserMood,
+  generateHumanizedResponse,
+  humanizeFinancialMessage,
+  type FluxTone,
+} from "./humanizedResponse";
+import { buildScenarioResponse } from "./consultorScenarioSimulator";
+import { buildGrowthResponse } from "./consultorGrowthAdvisor";
+import { buildGoalMentorResponse } from "./consultorGoalMentor";
+import { validateFinancialDataAvailability } from "@/lib/consultorSafety";
 
 export type ConsultorRichCard = {
   title: string;
@@ -21,6 +32,10 @@ type BuildConversationInput = {
   question: string;
   advisor: FinancialAdvisorResult;
   transactions: Transaction[];
+  pots?: Pot[];
+  adjustmentAccounts?: AdjustmentAccount[];
+  clients?: Client[];
+  services?: Service[];
 };
 
 type ContextMetrics = {
@@ -39,6 +54,15 @@ type ContextMetrics = {
   withdrawLimit: number;
   saveTarget: number;
   travelLimit: number;
+};
+
+type HumanizedDecision = {
+  scenarioReading: string;
+  practicalGuidance: string;
+  clearLimit: string;
+  conversationClosing: string;
+  card?: ConsultorRichCard;
+  contextKey: string;
 };
 
 function toMoney(value: number) {
@@ -94,15 +118,15 @@ function inferRiskTone(advisor: FinancialAdvisorResult): "positive" | "attention
 function actionByIntent(intent: ConsultorQuestionAnswer["intent"]) {
   switch (intent) {
     case "investir":
-      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opções"];
+      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opcoes"];
     case "gastos":
-      return ["Ver valor sugerido", "Entender o risco", "Montar plano", "Mais opções"];
+      return ["Ver valor sugerido", "Entender o risco", "Montar plano", "Mais opcoes"];
     case "retirada_pessoal":
-      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opções"];
+      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opcoes"];
     case "reserva":
-      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opções"];
+      return ["Ver valor sugerido", "Montar plano", "Entender o risco", "Mais opcoes"];
     default:
-      return ["Montar plano", "Entender o risco", "Ver valor sugerido", "Mais opções"];
+      return ["Montar plano", "Entender o risco", "Ver valor sugerido", "Mais opcoes"];
   }
 }
 
@@ -110,11 +134,22 @@ function containsAny(base: string, terms: string[]) {
   return terms.some((term) => base.includes(term));
 }
 
+function isGrowthQuestion(question: string) {
+  return containsAny(question, [
+    "ganhar mais dinheiro",
+    "vender mais",
+    "aumentar faturamento",
+    "crescer",
+    "negocio travou",
+    "faturando pouco",
+  ]);
+}
+
 function buildDecisionMessage(params: {
   answer: ConsultorQuestionAnswer;
   advisor: FinancialAdvisorResult;
   metrics: ContextMetrics;
-}): { message: string; card?: ConsultorRichCard } {
+}): { message: string; card?: ConsultorRichCard; tone: FluxTone } {
   const { answer, advisor, metrics } = params;
   const question = answer.normalizedQuestion;
 
@@ -124,101 +159,309 @@ function buildDecisionMessage(params: {
   const asksSpend = answer.intent === "gastos" || containsAny(question, ["gastar", "gasto", "compra"]);
   const asksSave = answer.intent === "guardar" || answer.intent === "reserva" || containsAny(question, ["guardar", "poupar", "reserva"]);
 
-  const safeTone = advisor.snapshot.riskProfile.level === "high" ? "Hoje o cenário pede cautela." : "Hoje você tem espaço para decidir com segurança, desde que mantenha equilíbrio.";
+  const safeTone =
+    advisor.snapshot.riskProfile.level === "high"
+      ? "seu caixa esta sensivel e pede cautela"
+      : "voce tem margem, mas precisa de disciplina";
+
+  let decision: HumanizedDecision;
 
   if (asksTravel) {
     const canTravel = metrics.travelLimit > 0;
-    const direct = canTravel
-      ? `Hoje você consegue viajar sem se prejudicar, mas o ideal é não passar de ${toMoney(metrics.travelLimit)}.`
-      : "Hoje ainda não é o melhor momento para viagem sem apertar seu caixa.";
-
-    return {
-      message: `${direct}\n\n${safeTone}\n\nSe eu fosse te orientar agora, eu diria para preservar pelo menos ${toMoney(metrics.protectedBase)} como proteção do caixa diário.\n\nSe quiser, eu posso te sugerir um plano rápido para fazer essa viagem com mais tranquilidade.`,
+    decision = {
+      contextKey: "travel",
+      scenarioReading: canTravel
+        ? `da para planejar essa viagem com controle, porque ${safeTone}`
+        : `hoje nao e o melhor momento para viagem, porque ${safeTone}`,
+      practicalGuidance: canTravel
+        ? "separe so o valor da viagem e mantenha folga para o giro da semana"
+        : "segure gasto opcional e recupere previsibilidade primeiro",
+      clearLimit: canTravel
+        ? `nao passar de ${toMoney(metrics.travelLimit)} agora`
+        : `preservar pelo menos ${toMoney(metrics.protectedBase)} antes desse passo`,
+      conversationClosing: "Me diz o plano da viagem que eu te falo se vale fazer agora.",
       card: {
-        title: "Valor prudente para viagem hoje",
+        title: "Faixa segura para viagem",
         description: `${toMoney(metrics.travelLimit)}`,
       },
     };
-  }
-
-  if (asksWithdraw) {
-    const direct = metrics.withdrawLimit > 0
-      ? `Hoje o valor mais seguro para retirada seria em torno de ${toMoney(metrics.withdrawLimit)}.`
-      : "Hoje não há folga segura para retirada sem pressionar os próximos dias.";
-
-    return {
-      message: `${direct}\n\nAcima disso, você começa a perder folga e pode sentir no fluxo dos próximos dias.\n\nSe eu estivesse te orientando agora, eu manteria uma retirada controlada e deixaria o restante como proteção operacional.\n\nSe quiser, eu te ajudo a definir um teto de retirada por semana.`,
+  } else if (asksWithdraw) {
+    decision = {
+      contextKey: "withdraw",
+      scenarioReading:
+        metrics.withdrawLimit > 0
+          ? `ha espaco para retirada pessoal sem baguncar o fluxo, mas ${safeTone}`
+          : `hoje nao ha folga para retirada sem apertar os proximos dias`,
+      practicalGuidance:
+        metrics.withdrawLimit > 0
+          ? "retire com teto e deixe reserva operacional"
+          : "segure retirada agora e recomponha caixa",
+      clearLimit:
+        metrics.withdrawLimit > 0
+          ? `retirada de ate ${toMoney(metrics.withdrawLimit)}`
+          : `nenhuma retirada ate recuperar ${toMoney(metrics.protectedBase)} de protecao`,
+      conversationClosing: "Se quiser, eu monto um teto semanal de retirada para voce.",
       card: {
         title: "Retirada segura agora",
         description: `${toMoney(metrics.withdrawLimit)}`,
       },
     };
-  }
-
-  if (asksInvest) {
-    const direct = metrics.prudentInvest > 0
-      ? `Hoje você pode investir, mas com equilíbrio. O mais prudente é ficar entre ${toMoney(metrics.investFloor)} e ${toMoney(metrics.investCeil)}.`
-      : "Hoje ainda não é o melhor momento para investir sem comprometer sua proteção de caixa.";
-
-    return {
-      message: `${direct}\n\nO ideal é proteger primeiro o dinheiro do dia a dia e investir apenas o excedente real.\n\nSe eu fosse te orientar agora, eu manteria pelo menos ${toMoney(metrics.protectedBase)} preservados para evitar aperto.\n\nSe quiser, eu monto um plano de investimento gradual para você começar sem risco desnecessário.`,
+  } else if (asksInvest) {
+    decision = {
+      contextKey: "invest",
+      scenarioReading:
+        metrics.prudentInvest > 0
+          ? `da para investir com controle e proteger o dia a dia`
+          : `ainda nao e hora de investir sem risco de aperto`,
+      practicalGuidance:
+        metrics.prudentInvest > 0
+          ? "comeca pequeno e mede impacto por 7 dias"
+          : "fortalece reserva antes de aumentar risco",
+      clearLimit:
+        metrics.prudentInvest > 0
+          ? `faixa prudente entre ${toMoney(metrics.investFloor)} e ${toMoney(metrics.investCeil)}`
+          : `manter pelo menos ${toMoney(metrics.protectedBase)} protegido`,
+      conversationClosing: "Quer que eu te passe um plano de aporte em etapas?",
       card: {
         title: "Faixa prudente de investimento",
         description: `${toMoney(metrics.investFloor)} a ${toMoney(metrics.investCeil)}`,
       },
     };
-  }
-
-  if (asksSpend) {
-    const direct = metrics.safeSpend > 0
-      ? `Hoje você pode gastar até ${toMoney(metrics.safeSpend)} sem comprometer seu caixa de forma importante.`
-      : "Hoje o cenário está mais apertado, então o ideal é segurar gastos não essenciais.";
-
-    return {
-      message: `${direct}\n\nSe eu estivesse te orientando agora, eu focaria no essencial e manteria uma reserva mínima para os próximos dias.\n\nSeu ponto de atenção é não deixar o gasto de hoje virar pressão no fluxo da semana.\n\nSe quiser, posso te mostrar como dividir esse valor com mais segurança.`,
+  } else if (asksSpend) {
+    decision = {
+      contextKey: "spend",
+      scenarioReading:
+        metrics.safeSpend > 0
+          ? `hoje da para movimentar sem quebrar o fluxo, se tiver controle`
+          : "o cenario esta apertado e gasto impulsivo pode te prender",
+      practicalGuidance:
+        metrics.safeSpend > 0
+          ? "prioriza essencial e adia o que nao traz retorno"
+          : "segura opcional e protege operacao",
+      clearLimit:
+        metrics.safeSpend > 0
+          ? `gasto seguro de ate ${toMoney(metrics.safeSpend)}`
+          : "limite curto hoje, foco total em preservar caixa",
+      conversationClosing: "Me fala o gasto que voce quer fazer e eu te digo se vale.",
       card: {
         title: "Limite de gasto seguro hoje",
         description: `${toMoney(metrics.safeSpend)}`,
       },
     };
-  }
-
-  if (asksSave) {
-    const direct = metrics.saveTarget > 0
-      ? `Hoje você consegue guardar em torno de ${toMoney(metrics.saveTarget)} com segurança.`
-      : "Neste momento, vale começar com uma meta menor para não pressionar seu caixa.";
-
-    return {
-      message: `${direct}\n\nO caminho mais forte é constância: guardar um valor possível toda semana.\n\nSe eu fosse te orientar agora, eu começaria com esse valor e revisaria em 7 dias, conforme seu fluxo real.\n\nSe quiser, eu te ajudo a transformar isso em uma meta simples de curto prazo.`,
+  } else if (asksSave) {
+    decision = {
+      contextKey: "save",
+      scenarioReading:
+        metrics.saveTarget > 0
+          ? "ha espaco para guardar com consistencia"
+          : "vale comecar pequeno para nao travar seu mes",
+      practicalGuidance:
+        metrics.saveTarget > 0
+          ? "automatiza um valor simples toda semana"
+          : "inicia com valor minimo e sobe depois",
+      clearLimit:
+        metrics.saveTarget > 0
+          ? `meta recomendada de ${toMoney(metrics.saveTarget)} no ritmo atual`
+          : "nao comprometer despesas essenciais",
+      conversationClosing: "Quer que eu monte sua meta de 14 dias agora?",
       card: {
-        title: "Valor de reserva recomendado",
+        title: "Valor recomendado para reserva",
         description: `${toMoney(metrics.saveTarget)}`,
+      },
+    };
+  } else {
+    decision = {
+      contextKey: "general",
+      scenarioReading:
+        advisor.snapshot.riskProfile.level === "low"
+          ? `seu momento esta mais estavel e ${safeTone}`
+          : `seu momento pede atencao para nao perder folga`,
+      practicalGuidance: "protege caixa primeiro e decide com objetivo",
+      clearLimit: `referencia segura de movimentacao hoje: ${toMoney(metrics.safeSpend)}`,
+      conversationClosing: "Me diz a decisao de agora que eu te dou o caminho mais seguro.",
+      card: {
+        title: "Folga financeira de referencia",
+        description: `${toMoney(metrics.safeSpend)}`,
       },
     };
   }
 
+  const mood = detectUserMood(answer.question);
+  const tone = chooseFluxTone({
+    question: answer.question,
+    mood,
+    riskTone: inferRiskTone(advisor),
+    intent: answer.intent,
+    hasGrowthIntent: isGrowthQuestion(question),
+  });
+
   return {
-    message: `Pelo seu momento atual, você está em ${advisor.snapshot.riskProfile.level === "low" ? "uma faixa mais segura" : "um ponto que exige mais atenção"}.\n\nSe eu fosse te orientar agora, eu focaria em proteger caixa e tomar decisões com limite claro.\n\nHoje, o valor que você consegue movimentar com menos risco está perto de ${toMoney(metrics.safeSpend)}.\n\nSe quiser, me diga a decisão que você quer tomar e eu te passo um valor exato para isso.`,
-    card: {
-      title: "Folga financeira de referência hoje",
-      description: `${toMoney(metrics.safeSpend)}`,
-    },
+    message: generateHumanizedResponse({
+      contextKey: `${decision.contextKey}-${answer.intent}`,
+      scenarioReading: decision.scenarioReading,
+      practicalGuidance: decision.practicalGuidance,
+      clearLimit: decision.clearLimit,
+      conversationClosing: decision.conversationClosing,
+    }),
+    card: decision.card,
+    tone,
   };
 }
 
 export function answerConsultorConversation(input: BuildConversationInput): ConsultorConversationReply {
   const answer = answerConsultorQuestion(input);
+  const dataAvailability = validateFinancialDataAvailability({
+    transactions: input.transactions,
+    pots: input.pots ?? [],
+    adjustmentAccounts: input.adjustmentAccounts ?? [],
+  });
+
+  if (!dataAvailability.ok && (isGrowthQuestion(input.question) || containsAny(answer.normalizedQuestion, ["meta", "cenario", "simular", "invest"]))) {
+    return {
+      answer,
+      message: `${dataAvailability.message}\n\n${dataAvailability.fallback}`,
+      riskTone: "attention",
+      quickActions: [
+        "Registrar entrada rápida",
+        "Registrar saída rápida",
+        "Configurar meta de reserva",
+      ],
+      richCards: [],
+    };
+  }
+
+  const growthReply = buildGrowthResponse({
+    question: input.question,
+    advisor: input.advisor,
+    transactions: input.transactions,
+    clients: input.clients,
+    services: input.services,
+  });
+
+  if (growthReply.matched) {
+    const risk = growthReply.riskTone ?? inferRiskTone(input.advisor);
+    const tone = chooseFluxTone({
+      question: input.question,
+      mood: detectUserMood(input.question),
+      riskTone: risk,
+      hasGrowthIntent: true,
+    });
+    const primaryAction = growthReply.quickActions?.[0] ?? "Me diz por onde voce quer comecar.";
+
+    return {
+      answer,
+      message: humanizeFinancialMessage({
+        contextKey: "growth-advisor",
+        question: input.question,
+        tone,
+        baseMessage: growthReply.message ?? "Nao consegui montar a estrategia de crescimento agora.",
+        scenarioReading: "Aqui o foco e crescer sem sacrificar caixa.",
+        practicalGuidance: "Ticket medio, recorrencia e margem precisam andar juntos.",
+        clearLimit: "Nao aumentar custo fixo sem demanda validada.",
+        reason: "crescimento bom e o que cabe no caixa e dura no tempo",
+        nextAction: primaryAction,
+      }),
+      riskTone: risk,
+      quickActions: growthReply.quickActions ?? actionByIntent(answer.intent),
+      richCards: growthReply.cards ?? [],
+    };
+  }
+
+  const scenarioReply = buildScenarioResponse({
+    question: input.question,
+    advisor: input.advisor,
+    transactions: input.transactions,
+  });
+
+  if (scenarioReply.matched) {
+    const risk = scenarioReply.riskTone ?? inferRiskTone(input.advisor);
+    const tone = chooseFluxTone({
+      question: input.question,
+      mood: detectUserMood(input.question),
+      riskTone: risk,
+      isEducational: true,
+    });
+    const primaryAction = scenarioReply.quickActions?.[0] ?? "Quer que eu compare com outro cenario?";
+
+    return {
+      answer,
+      message: humanizeFinancialMessage({
+        contextKey: "scenario-simulator",
+        question: input.question,
+        tone,
+        baseMessage: scenarioReply.missingPrompt ?? scenarioReply.message ?? "Nao consegui concluir a simulacao agora.",
+        scenarioReading: "Simular antes evita erro caro depois.",
+        practicalGuidance: "Compare impacto de 3, 6 e 12 meses antes de decidir.",
+        clearLimit: "Estimativa nao e promessa de resultado.",
+        reason: "clareza de risco melhora sua decisao",
+        nextAction: primaryAction,
+      }),
+      riskTone: risk,
+      quickActions: scenarioReply.quickActions ?? actionByIntent(answer.intent),
+      richCards: scenarioReply.cards ?? [],
+    };
+  }
+
+  const goalReply = buildGoalMentorResponse({
+    question: input.question,
+    pots: input.pots ?? [],
+    transactions: input.transactions,
+    adjustmentAccounts: input.adjustmentAccounts ?? [],
+  });
+
+  if (goalReply.matched) {
+    const risk = goalReply.riskTone ?? inferRiskTone(input.advisor);
+    const tone = chooseFluxTone({
+      question: input.question,
+      mood: detectUserMood(input.question),
+      riskTone: risk,
+      isEducational: true,
+      isCelebration: risk === "positive",
+    });
+    const primaryAction = goalReply.quickActions?.[0] ?? "Quer que eu acompanhe essa meta com voce dia a dia?";
+
+    return {
+      answer,
+      message: humanizeFinancialMessage({
+        contextKey: "goal-mentor",
+        question: input.question,
+        tone,
+        baseMessage: goalReply.message ?? "Nao consegui ler suas metas agora.",
+        scenarioReading: "Meta sem acompanhamento vira desejo. Meta com plano vira resultado.",
+        practicalGuidance: "Divida em hoje, 7 dias e 30 dias para reduzir friccao.",
+        clearLimit: "Nao acelerar de um jeito que aperte seu caixa.",
+        reason: "constancia com seguranca e o que leva ate o fim da meta",
+        nextAction: primaryAction,
+      }),
+      riskTone: risk,
+      quickActions: goalReply.quickActions ?? actionByIntent(answer.intent),
+      richCards: goalReply.cards ?? [],
+    };
+  }
+
   const metrics = computeMetrics(input.advisor);
   const decision = buildDecisionMessage({
     answer,
     advisor: input.advisor,
     metrics,
   });
+  const risk = inferRiskTone(input.advisor);
+  const primaryAction = actionByIntent(answer.intent)[0] ?? "Me diz o que voce quer fazer agora.";
 
   return {
     answer,
-    message: decision.message,
-    riskTone: inferRiskTone(input.advisor),
+    message: humanizeFinancialMessage({
+      contextKey: `general-${answer.intent}`,
+      question: input.question,
+      tone: decision.tone,
+      baseMessage: decision.message,
+      scenarioReading: "Seu momento pede clareza e ritmo, nao impulso.",
+      practicalGuidance: "Protege caixa primeiro e acelera no que da retorno.",
+      clearLimit: "Nao sacrificar o essencial por ansiedade do curto prazo.",
+      reason: "disciplina no caixa abre espaco para crescer com menos pressao",
+      nextAction: primaryAction,
+    }),
+    riskTone: risk,
     quickActions: actionByIntent(answer.intent),
     richCards: decision.card ? [decision.card] : [],
   };
