@@ -1,279 +1,465 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import {
   ArrowRight,
-  BriefcaseBusiness,
-  CalendarDays,
-  CircleHelp,
-  Lock,
-  Shield,
-  ShieldCheck,
-  User,
-  Wallet,
-  Zap,
   BarChart3,
-  TrendingUp,
-  Check,
+  Bot,
+  CheckCircle2,
+  HelpCircle,
+  Laptop,
+  Lock,
+  PieChart,
+  ShieldCheck,
+  Smartphone,
+  Target,
+  WalletCards,
 } from "lucide-react";
+
 import { useApp } from "@/contexts/AppContext";
 import { ScreenType } from "@/lib/types";
 
-const PROBLEM_ITEMS = [
-  { icon: Wallet, text: "Mistura dinheiro pessoal com o do trabalho" },
-  { icon: CircleHelp, text: "Não sabe se pode gastar ou não" },
-  { icon: CalendarDays, text: "Fica perdido no fim do mês" },
-  { icon: TrendingUp, text: "Trabalha muito mas não sabe o lucro real" },
+const FEATURES = [
+  {
+    icon: WalletCards,
+    title: "Fluxo de caixa inteligente",
+    description: "Entenda suas entradas, saídas e lucro de forma automática e clara.",
+  },
+  {
+    icon: Target,
+    title: "Potes e metas",
+    description: "Organize seu dinheiro em potes e alcance seus objetivos.",
+  },
+  {
+    icon: Bot,
+    title: "Consultor IA",
+    description: "Receba insights personalizados e recomendações para melhorar sua saúde financeira.",
+  },
+  {
+    icon: BarChart3,
+    title: "Relatórios avançados",
+    description: "Visualize gráficos, indicadores e tome decisões com base em dados reais.",
+  },
 ];
+
+const HERO_BULLETS = ["Simples de usar", "100% seguro", "Resultados reais"];
+const BENEFITS = ["Foco no que importa", "Clareza para decidir", "Mais lucro, menos confusão"];
+const CTA_BULLETS = ["7 dias grátis para testar tudo", "Sem cartão de crédito", "Cancele quando quiser"];
 
 export default function LandingScreen() {
   const { goScreen } = useApp();
   const [logoSrc, setLogoSrc] = useState("/logo-full.png");
-  const [iconSrc, setIconSrc] = useState("/icon.png");
 
   const goToAuth = () => goScreen(ScreenType.LOGIN);
 
   return (
     <div
-      className="landing-page relative min-h-screen max-w-full overflow-x-hidden bg-[#020b08] text-[#f6fffb] box-border [&_*]:box-border"
-      style={{ fontFamily: "Inter, Poppins, Segoe UI, Roboto, sans-serif" }}
+      className="fc-landing min-h-screen overflow-x-hidden bg-[#020617] text-white antialiased"
+      style={{ fontFamily: '"Gotan", "Inter", "Montserrat", "Arial", sans-serif' }}
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_14%_6%,rgba(18,214,122,0.18),transparent_35%),radial-gradient(circle_at_78%_18%,rgba(34,197,94,0.14),transparent_40%),radial-gradient(circle_at_52%_115%,rgba(18,214,122,0.11),transparent_50%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,#020b08,#03110c_44%,#020b08)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_24%_-8%,rgba(34,197,94,0.18),transparent_30%),radial-gradient(circle_at_78%_18%,rgba(20,184,166,0.12),transparent_30%),linear-gradient(180deg,#020617_0%,#020617_100%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(rgba(34,197,94,0.12)_1px,transparent_1px)] bg-[size:30px_30px] opacity-[0.08]" />
 
-      <main className="landing-main relative z-10 mx-auto w-full max-w-[1440px] px-5 py-6 sm:px-8 lg:px-16 xl:px-24">
-        <header className="mb-7 flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center">
+      <header className="sticky top-0 z-50 border-b border-emerald-300/10 bg-[#020617]/74 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between gap-4 px-5 md:px-8">
+          <button type="button" onClick={goToAuth} className="flex min-w-0 items-center">
             <img
               src={logoSrc}
               alt="FluxoCerto 360"
               onError={() => setLogoSrc("/icon.png")}
-              className="h-auto w-[212px] max-w-full sm:w-[262px]"
-              style={{ objectFit: "contain" }}
+              className="h-9 w-auto max-w-[188px] object-contain"
             />
-          </div>
-
-          <button
-            type="button"
-            onClick={goToAuth}
-            className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full border border-[rgba(41,207,123,0.40)] bg-[rgba(5,21,16,0.62)] px-4 text-sm font-semibold text-[#d5ffea] transition hover:border-[rgba(101,241,116,0.62)] hover:shadow-[0_0_18px_rgba(34,197,94,0.24)]"
-          >
-            <Lock className="h-3.5 w-3.5" />
-            Acesse sua conta
           </button>
-        </header>
 
-        <section className="landing-hero grid items-start gap-10 lg:grid-cols-[minmax(0,640px)_minmax(0,520px)] lg:justify-between xl:gap-12">
-          <div className="landing-hero-copy w-full max-w-[640px]">
-            <h1 className="max-w-[640px] text-balance text-[clamp(2.625rem,10vw,3.65rem)] font-black leading-[0.98] tracking-[-0.02em] text-white">
-              Pare de misturar seu dinheiro e descubra quanto você <span className="text-[#5ff16d]">realmente ganha.</span>
-            </h1>
+          <nav className="hidden items-center gap-8 text-[13px] font-semibold text-slate-200/90 lg:flex">
+            <a className="transition hover:text-emerald-300" href="#recursos">Recursos</a>
+            <a className="transition hover:text-emerald-300" href="#para-quem">Para quem é</a>
+            <a className="transition hover:text-emerald-300" href="#como-funciona">Como funciona</a>
+            <a className="transition hover:text-emerald-300" href="#precos">Preços</a>
+          </nav>
 
-            <p className="mt-4 text-base font-semibold leading-relaxed text-[rgba(222,255,240,0.92)] sm:text-lg">
-              <span className="text-[#5ff16d]">FluxoCerto 360:</span> Onde seu dinheiro pessoal e seu negócio param de brigar.
-            </p>
-
-            <p className="mt-4 max-w-xl text-sm leading-7 text-[rgba(205,239,224,0.82)] sm:text-base">
-              Se você trabalha por conta, sabe como é: entra dinheiro, sai dinheiro... e no fim do mês você não sabe quanto sobrou de verdade.
-            </p>
-
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               onClick={goToAuth}
-              className="mt-7 inline-flex h-14 items-center gap-2 rounded-2xl border border-[rgba(99,242,116,0.52)] bg-gradient-to-r from-[#65f174] to-[#16c784] px-8 text-[17px] font-black text-[#022316] shadow-[0_14px_34px_rgba(34,197,94,0.30)] transition hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(101,241,116,0.44)]"
+              className="hidden h-10 items-center rounded-full px-4 text-sm font-bold text-slate-100 transition hover:text-emerald-300 sm:inline-flex"
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              onClick={goToAuth}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 px-5 text-sm font-black text-[#02130b] shadow-[0_0_24px_rgba(34,197,94,0.28)] transition hover:scale-[1.02] hover:shadow-[0_0_34px_rgba(34,197,94,0.42)]"
             >
               Começar agora
-              <ArrowRight className="h-5 w-5" />
+              <ArrowRight className="h-4 w-4" />
             </button>
+          </div>
+        </div>
+      </header>
 
-            <div className="mt-6 grid gap-3 text-sm text-[rgba(211,247,229,0.84)] sm:grid-cols-3">
-              <span className="inline-flex items-center gap-2 font-semibold">
-                <ShieldCheck className="h-4 w-4 text-[#62f173]" /> Seguro e privado
+      <main className="relative z-10">
+        <section className="mx-auto grid w-full max-w-[1280px] items-center gap-10 px-5 pb-11 pt-7 md:px-8 lg:min-h-[calc(100vh-64px)] lg:grid-cols-[minmax(0,590px)_minmax(430px,1fr)] lg:pb-12 lg:pt-8">
+          <div className="max-w-[610px]">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-4 py-2 text-xs font-bold text-emerald-300 shadow-[0_0_20px_rgba(34,197,94,0.12)]">
+              <ShieldCheck className="h-4 w-4" />
+              Seu dinheiro no controle. Sempre.
+            </div>
+
+            <h1 className="mt-5 text-[clamp(3.1rem,8.8vw,4.5rem)] font-black leading-[0.98] tracking-[-0.045em] text-white md:text-[clamp(3.6rem,5.3vw,5.125rem)]">
+              Pare de misturar
+              <br />
+              seu dinheiro e
+              <br />
+              descubra{" "}
+              <span className="text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.18)]">
+                quanto
+                <br />
+                você realmente ganha.
               </span>
-              <span className="inline-flex items-center gap-2 font-semibold">
-                <BarChart3 className="h-4 w-4 text-[#62f173]" /> Simples de usar
-              </span>
-              <span className="inline-flex items-center gap-2 font-semibold">
-                <Zap className="h-4 w-4 text-[#62f173]" /> Resultados reais
-              </span>
+            </h1>
+
+            <p className="mt-5 max-w-xl text-[15px] leading-7 text-slate-300 md:text-base">
+              O FluxoCerto 360 organiza seu dinheiro pessoal e do negócio, te dá clareza total e ajuda
+              você a tomar decisões melhores todos os dias.
+            </p>
+
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {HERO_BULLETS.map((item) => (
+                <div
+                  key={item}
+                  className="flex h-11 items-center gap-2 rounded-xl border border-emerald-300/15 bg-white/[0.035] px-4 text-xs font-bold text-slate-100 backdrop-blur-xl"
+                >
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  {item}
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={goToAuth}
+                className="inline-flex h-13 min-h-13 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 px-7 py-4 text-sm font-black text-[#02130b] shadow-[0_14px_32px_rgba(34,197,94,0.28)] transition hover:scale-[1.02] hover:shadow-[0_0_34px_rgba(34,197,94,0.42)]"
+              >
+                Começar agora gratuitamente
+                <ArrowRight className="h-4 w-4" />
+              </button>
+              <a
+                href="#como-funciona"
+                className="inline-flex h-13 min-h-13 items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/[0.025] px-6 py-4 text-sm font-black text-white backdrop-blur-xl transition hover:scale-[1.02] hover:border-emerald-300/30 hover:bg-emerald-400/10"
+              >
+                <HelpCircle className="h-5 w-5" />
+                Ver como funciona
+              </a>
             </div>
           </div>
 
-          <div className="landing-hero-visual relative mx-auto w-full max-w-[360px] overflow-visible py-3 sm:max-w-[420px] lg:mx-0 lg:ml-auto lg:max-w-[420px] xl:max-w-[520px]">
-            <div className="pointer-events-none absolute left-1/2 top-[47%] h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[rgba(91,241,111,0.62)] sm:h-[380px] sm:w-[380px] xl:h-[430px] xl:w-[430px]" />
-            <div className="pointer-events-none absolute left-1/2 top-[47%] h-[330px] w-[330px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(20,204,110,0.30),rgba(20,204,110,0.08)_44%,transparent_72%)] blur-lg sm:h-[370px] sm:w-[370px] xl:h-[420px] xl:w-[420px]" />
-            <div className="pointer-events-none absolute right-2 top-[150px] h-[140px] w-[140px] rounded-full bg-[radial-gradient(rgba(102,255,170,0.30)_1px,transparent_1px)] bg-[size:10px_10px] opacity-35 sm:h-[160px] sm:w-[160px] xl:h-[190px] xl:w-[190px]" />
-
-            <div className="relative z-10 mx-auto h-[500px] w-[258px] rounded-[40px] border border-[rgba(129,157,145,0.66)] bg-[linear-gradient(180deg,#0c1412,#06100d)] p-[9px] shadow-[0_28px_70px_rgba(0,0,0,0.5),0_0_28px_rgba(34,197,94,0.16)] sm:h-[540px] sm:w-[278px] sm:rounded-[42px] sm:p-[10px] xl:h-[574px] xl:w-[296px] xl:rounded-[44px]">
-              <div className="h-full w-full rounded-[30px] border border-[rgba(66,98,84,0.84)] bg-[linear-gradient(180deg,#08120f,#040a08)] p-3.5 sm:rounded-[32px] sm:p-4 xl:rounded-[34px]">
-                <div className="mx-auto mb-4 h-[23px] w-[122px] rounded-full bg-[rgba(16,36,29,0.96)]" />
-
-                <div className="rounded-2xl border border-[rgba(59,225,130,0.20)] bg-[rgba(9,29,21,0.72)] px-3 py-2">
-                  <img
-                    src="/logo-full.png"
-                    alt="FluxoCerto"
-                    className="h-auto w-[108px]"
-                    onError={(event) => {
-                      event.currentTarget.style.display = "none";
-                    }}
-                  />
-
-                  <div className="mt-3 flex items-center justify-between text-[12px] font-semibold text-[rgba(214,255,236,0.86)]">
-                    <span>Resumo do mês</span>
-                    <span className="text-[rgba(163,213,186,0.8)]">Maio 2025</span>
-                  </div>
-
-                  <div className="mt-2 rounded-xl border border-[rgba(66,233,138,0.20)] bg-[rgba(10,35,25,0.78)] p-3">
-                    <p className="text-[12px] text-[rgba(178,236,202,0.80)]">Lucro real</p>
-                    <p className="mt-1 text-[31px] font-black leading-none text-[#38d970] sm:text-[33px] xl:text-[35px]">R$ 4.680,00</p>
-                    <p className="mt-1 text-[12px] font-semibold text-[#69f58b]">+12% vs mês anterior</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="landing-floating-pots relative z-20 mx-auto mt-4 grid w-full max-w-[336px] grid-cols-3 gap-2 sm:max-w-[372px] sm:gap-2.5 lg:absolute lg:left-1/2 lg:top-[308px] lg:mt-0 lg:w-[378px] lg:max-w-[378px] lg:-translate-x-1/2 xl:top-[330px] xl:w-[444px] xl:max-w-[444px]">
-              <div className="rounded-xl border border-[rgba(45,204,113,0.28)] bg-[rgba(8,33,24,0.86)] p-2 backdrop-blur-xl sm:rounded-2xl sm:p-2.5 xl:p-3">
-                <div className="mb-1 inline-flex h-6 w-6 items-center justify-center rounded-lg bg-[rgba(40,215,117,0.18)] text-[#7eff96] sm:h-7 sm:w-7 sm:rounded-xl xl:h-8 xl:w-8">
-                  <User className="h-4 w-4" />
-                </div>
-                <p className="text-[11px] font-bold text-[#cffff0] sm:text-[12px] xl:text-[13px]">Pessoal</p>
-                <p className="mt-1 text-xs font-black leading-none text-[#44e370] sm:text-[13px] xl:text-base">R$ 2.100,00</p>
-              </div>
-
-              <div className="rounded-xl border border-[rgba(64,161,255,0.32)] bg-[rgba(10,28,43,0.86)] p-2 backdrop-blur-xl sm:rounded-2xl sm:p-2.5 xl:p-3">
-                <div className="mb-1 inline-flex h-6 w-6 items-center justify-center rounded-lg bg-[rgba(64,161,255,0.18)] text-[#7fc4ff] sm:h-7 sm:w-7 sm:rounded-xl xl:h-8 xl:w-8">
-                  <BriefcaseBusiness className="h-4 w-4" />
-                </div>
-                <p className="text-[11px] font-bold text-[#d7ebff] sm:text-[12px] xl:text-[13px]">Negócio</p>
-                <p className="mt-1 text-xs font-black leading-none text-[#3ea8ff] sm:text-[13px] xl:text-base">R$ 3.800,00</p>
-              </div>
-
-              <div className="rounded-xl border border-[rgba(243,187,59,0.33)] bg-[rgba(37,28,10,0.86)] p-2 backdrop-blur-xl sm:rounded-2xl sm:p-2.5 xl:p-3">
-                <div className="mb-1 inline-flex h-6 w-6 items-center justify-center rounded-lg bg-[rgba(243,187,59,0.2)] text-[#ffd56c] sm:h-7 sm:w-7 sm:rounded-xl xl:h-8 xl:w-8">
-                  <Lock className="h-4 w-4" />
-                </div>
-                <p className="text-[11px] font-bold text-[#ffebb2] sm:text-[12px] xl:text-[13px]">Reserva</p>
-                <p className="mt-1 text-xs font-black leading-none text-[#f6bf34] sm:text-[13px] xl:text-base">R$ 1.200,00</p>
-              </div>
-            </div>
-
-            <div className="landing-mockup-summary absolute bottom-[20px] left-1/2 z-20 w-[96%] -translate-x-1/2 rounded-2xl border border-[rgba(53,214,120,0.20)] bg-[rgba(9,31,23,0.86)] px-3 py-2.5 backdrop-blur-xl sm:bottom-[24px] sm:px-4 sm:py-3 xl:bottom-[28px]">
-              <div className="grid grid-cols-3 gap-2 text-center sm:gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold text-[#31d86f] sm:text-[12px] xl:text-[13px]">Entradas</p>
-                  <p className="text-[11px] font-black leading-none text-white sm:text-[13px] xl:text-base">R$ 8.650,00</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold text-[#f56e6e] sm:text-[12px] xl:text-[13px]">Saídas</p>
-                  <p className="text-[11px] font-black leading-none text-[#ff5d5d] sm:text-[13px] xl:text-base">- R$ 3.970,00</p>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold text-[#d6ab4b] sm:text-[12px] xl:text-[13px]">Taxas/Custos</p>
-                  <p className="text-[11px] font-black leading-none text-[#f5b74a] sm:text-[13px] xl:text-base">- R$ 1.080,00</p>
-                </div>
-              </div>
-            </div>
-          </div>
+          <HeroMockup />
         </section>
 
-        <section className="landing-problem mt-6 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] px-5 py-4 shadow-[0_12px_34px_rgba(0,0,0,0.30)] backdrop-blur-[12px]">
-          <h2 className="text-[clamp(1.9rem,8.5vw,2.75rem)] font-black leading-[1.05] tracking-[-0.02em] text-white">Você trabalha... mas não vê o dinheiro</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4 xl:gap-0">
-            {PROBLEM_ITEMS.map((item, index) => {
-              const Icon = item.icon;
+        <section id="recursos" className="mx-auto w-full max-w-[1280px] border-t border-emerald-300/10 px-5 py-10 md:px-8 lg:py-11">
+          <div className="mx-auto max-w-3xl text-center">
+            <h2 className="text-2xl font-black tracking-[-0.03em] text-white md:text-3xl">
+              Tudo que você precisa para ter controle total
+            </h2>
+            <p className="mt-2 text-sm text-slate-400 md:text-base">Um sistema completo, pensado para sua vida real.</p>
+          </div>
+
+          <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+            {FEATURES.map((feature) => {
+              const Icon = feature.icon;
               return (
-                <div
-                  key={item.text}
-                  className={`flex items-center gap-3 rounded-xl px-3 py-3 xl:rounded-none xl:px-5 ${index < 3 ? "xl:border-r xl:border-[rgba(44,123,84,0.45)]" : ""}`}
+                <article
+                  key={feature.title}
+                  className="group min-h-[184px] rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-6 shadow-[0_18px_44px_rgba(0,0,0,0.18)] backdrop-blur-xl transition hover:scale-[1.02] hover:border-emerald-300/28 hover:bg-emerald-400/[0.055] hover:shadow-[0_0_30px_rgba(34,197,94,0.14)]"
                 >
-                  <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[rgba(57,195,113,0.34)] bg-[rgba(10,36,26,0.78)] text-[#66ef85]">
+                  <div className="grid h-11 w-11 place-items-center rounded-xl border border-emerald-300/18 bg-emerald-400/10 text-emerald-300">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <p className="text-sm font-semibold leading-snug text-[rgba(223,250,236,0.88)]">{item.text}</p>
-                </div>
+                  <h3 className="mt-7 text-base font-black text-white">{feature.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-400">{feature.description}</p>
+                </article>
               );
             })}
           </div>
         </section>
 
-        <section className="landing-cards-grid mt-4 grid gap-4 xl:grid-cols-4">
-          <article className="relative overflow-hidden rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-[#62ef79]">O FluxoCerto organiza tudo pra você</h3>
-            <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">
-              Com um sistema simples, você separa seu dinheiro automaticamente e entende exatamente o que é seu, o que é do negócio e o que pode gastar.
+        <section id="para-quem" className="mx-auto grid w-full max-w-[1280px] items-center gap-9 px-5 py-10 md:px-8 lg:grid-cols-[0.72fr_1fr] lg:py-11">
+          <div>
+            <h2 className="text-balance text-2xl font-black leading-tight tracking-[-0.035em] text-white md:text-4xl">
+              Ferramenta feita para quem quer clareza e resultado de verdade
+            </h2>
+            <p className="mt-4 max-w-lg text-sm leading-6 text-slate-400 md:text-base">
+              Empreendedores, autônomos e pequenos negócios que decidiram ter controle de verdade.
             </p>
-            <div className="landing-card-illustration absolute bottom-3 right-3 h-[96px] w-[82px] rotate-6 rounded-2xl border border-[rgba(101,241,116,0.30)] bg-[linear-gradient(160deg,rgba(16,64,42,0.8),rgba(9,30,22,0.6))] p-3">
-              <div className="mt-7 grid grid-cols-4 gap-1">
-                <span className="h-4 rounded-sm bg-[#3ed76f]" />
-                <span className="h-7 rounded-sm bg-[#53f178]" />
-                <span className="h-10 rounded-sm bg-[#2ec867]" />
-                <span className="h-8 rounded-sm bg-[#61ff83]" />
-              </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-3 lg:grid-cols-3">
+              {BENEFITS.map((benefit) => (
+                <div key={benefit} className="flex items-center gap-3 text-sm font-bold text-slate-200">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-emerald-300/25 bg-emerald-400/10">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  </span>
+                  {benefit}
+                </div>
+              ))}
             </div>
-          </article>
 
-          <article className="rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-white">Seu dinheiro separado do jeito certo</h3>
-            <ul className="mt-4 space-y-4 text-[15px]">
-              <li className="flex gap-3 text-[rgba(212,244,227,0.87)]"><span className="mt-1 h-3 w-3 rounded-full bg-[#62ef79]" />Pessoal<br /><span className="text-[rgba(185,228,207,0.8)]">Seu dinheiro para viver</span></li>
-              <li className="flex gap-3 text-[rgba(212,244,227,0.87)]"><span className="mt-1 h-3 w-3 rounded-full bg-[#40a8ff]" />Negócio<br /><span className="text-[rgba(185,228,207,0.8)]">O dinheiro que mantém seu trabalho funcionando</span></li>
-              <li className="flex gap-3 text-[rgba(212,244,227,0.87)]"><span className="mt-1 h-3 w-3 rounded-full bg-[#f0bf4d]" />Reserva<br /><span className="text-[rgba(185,228,207,0.8)]">Segurança para não ser pego de surpresa</span></li>
-            </ul>
-          </article>
+            <article className="mt-7 rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-6 backdrop-blur-xl">
+              <p className="text-base font-bold leading-7 text-white">
+                "Construído para quem trabalha por conta e precisa enxergar o lucro real sem complicação."
+              </p>
+            </article>
+          </div>
 
-          <article className="rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-[#62ef79]">Saiba quanto você realmente ganha</h3>
-            <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">
-              O app considera taxas, custos e gastos reais. Você não vê só o dinheiro que entrou, mas o que sobrou de verdade.
-            </p>
-            <svg className="mt-5 h-[88px] w-full" viewBox="0 0 260 88" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M6 74L35 56L60 62L85 44L108 48L130 36L153 42L178 28L202 20L228 10L254 4" stroke="rgba(99,242,116,0.92)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="35" cy="56" r="3" fill="#62ef79" />
-              <circle cx="85" cy="44" r="3" fill="#62ef79" />
-              <circle cx="130" cy="36" r="3" fill="#62ef79" />
-              <circle cx="178" cy="28" r="3" fill="#62ef79" />
-              <circle cx="228" cy="10" r="3" fill="#62ef79" />
-            </svg>
-          </article>
-
-          <article className="relative overflow-hidden rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.70)] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-            <h3 className="text-[clamp(1.9rem,8vw,2.2rem)] font-black leading-tight text-white">Se você trabalha por conta, isso aqui é pra você</h3>
-            <p className="mt-3 text-[15px] leading-6 text-[rgba(212,244,227,0.86)]">Chega de viver no escuro financeiro. Comece hoje a organizar sua vida e seu negócio.</p>
-            <button
-              type="button"
-              onClick={goToAuth}
-              className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-[rgba(99,242,116,0.48)] bg-gradient-to-r from-[#65f174] to-[#16c784] px-6 text-sm font-black text-[#032516] shadow-[0_12px_24px_rgba(34,197,94,0.3)] transition hover:scale-[1.02] hover:shadow-[0_0_26px_rgba(101,241,116,0.42)]"
-            >
-              Começar agora
-              <ArrowRight className="h-4 w-4" />
-            </button>
-            <img
-              src={iconSrc}
-              alt="Marca"
-              onError={(event) => {
-                event.currentTarget.style.display = "none";
-              }}
-              className="pointer-events-none absolute -bottom-3 -right-3 h-28 w-28 opacity-[0.13]"
-            />
-          </article>
+          <ProductShowcase />
         </section>
 
-        <section className="landing-guarantees mt-4 rounded-[20px] border border-[rgba(34,197,94,0.18)] bg-[rgba(4,24,18,0.72)] px-4 py-3 shadow-[0_10px_28px_rgba(0,0,0,0.28)] backdrop-blur-[12px]">
-          <div className="grid gap-2 lg:grid-cols-3">
-            <div className="flex items-center gap-3 rounded-xl bg-[rgba(8,32,23,0.66)] px-4 py-3">
-              <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(39,205,118,0.2)] text-[#6ef58a]"><Lock className="h-4 w-4" /></div>
-              <p className="text-[14px] leading-5 text-[rgba(217,247,232,0.9)]"><strong className="text-white">Seus dados 100% protegidos</strong><br />Privacidade é prioridade</p>
+        <section id="precos" className="mx-auto w-full max-w-[1280px] px-5 py-10 md:px-8 lg:py-12">
+          <div className="grid overflow-hidden rounded-[28px] border border-emerald-300/18 bg-[radial-gradient(circle_at_18%_45%,rgba(34,197,94,0.28),transparent_34%),linear-gradient(135deg,rgba(7,35,27,0.94),rgba(2,6,23,0.92))] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.30)] backdrop-blur-xl md:grid-cols-[0.65fr_1fr] md:p-8 lg:grid-cols-[0.72fr_1fr_0.9fr]">
+            <div className="relative min-h-[230px] md:min-h-[260px]">
+              <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-[60px]" />
+              <img
+                src="/mascoteprincipal.png"
+                alt="Mascote FluxoCerto"
+                className="relative mx-auto h-[260px] max-w-full object-contain md:h-[300px]"
+              />
             </div>
-            <div className="flex items-center gap-3 rounded-xl bg-[rgba(8,32,23,0.66)] px-4 py-3">
-              <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(39,205,118,0.2)] text-[#6ef58a]"><Check className="h-4 w-4" /></div>
-              <p className="text-[14px] leading-5 text-[rgba(217,247,232,0.9)]"><strong className="text-white">Feito para quem trabalha por conta</strong><br />Autônomos, freelancers e pequenos negócios</p>
+
+            <div className="flex flex-col justify-center py-4 md:pl-6">
+              <h2 className="text-balance text-2xl font-black leading-tight tracking-[-0.035em] text-white md:text-4xl">
+                Chegou a hora de ter clareza, controle e resultados.
+              </h2>
+              <div className="mt-6 grid gap-3">
+                {CTA_BULLETS.map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-sm font-bold text-slate-200">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+                    {item}
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="flex items-center gap-3 rounded-xl bg-[rgba(8,32,23,0.66)] px-4 py-3">
-              <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[rgba(39,205,118,0.2)] text-[#6ef58a]"><Shield className="h-4 w-4" /></div>
-              <p className="text-[14px] leading-5 text-[rgba(217,247,232,0.9)]"><strong className="text-white">Sem complicação</strong><br />Tudo simples, direto e prático</p>
+
+            <div className="flex items-center md:col-span-2 lg:col-span-1">
+              <button
+                type="button"
+                onClick={goToAuth}
+                className="mt-5 inline-flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-green-500 px-7 text-sm font-black text-[#02130b] shadow-[0_18px_40px_rgba(34,197,94,0.30)] transition hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(34,197,94,0.44)] md:mt-0"
+              >
+                Começar agora gratuitamente
+                <ArrowRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </section>
       </main>
+
+      <footer className="relative z-10 border-t border-emerald-300/10 bg-[#020617]/88">
+        <div className="mx-auto grid w-full max-w-[1280px] gap-9 px-5 py-10 md:grid-cols-2 md:px-8 lg:grid-cols-[1.4fr_0.75fr_0.75fr_0.75fr_1fr]">
+          <div>
+            <img src="/logo-full.png" alt="FluxoCerto 360" className="h-10 w-auto object-contain" />
+            <p className="mt-4 max-w-xs text-sm leading-6 text-slate-400">
+              Sistema completo para organizar seu dinheiro pessoal e do negócio.
+            </p>
+          </div>
+
+          <FooterColumn title="Produto" items={["Recursos", "Preços", "Atualizações", "Roadmap"]} />
+          <FooterColumn title="Empresa" items={["Sobre nós", "Blog", "Carreiras", "Contato"]} />
+          <FooterColumn title="Suporte" items={["Central de ajuda", "Tutoriais", "Privacidade", "Termos de uso"]} />
+
+          <div className="rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-5 backdrop-blur-xl">
+            <Lock className="h-10 w-10 rounded-xl border border-emerald-300/20 bg-emerald-400/10 p-2 text-emerald-300" />
+            <p className="mt-4 text-sm font-black text-white">Segurança bancária</p>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Seus dados protegidos com criptografia de ponta a ponta.
+            </p>
+          </div>
+        </div>
+        <p className="pb-7 text-center text-xs text-slate-500">© 2025 FluxoCerto 360. Todos os direitos reservados.</p>
+      </footer>
+    </div>
+  );
+}
+
+function HeroMockup() {
+  return (
+    <div className="relative mx-auto h-[520px] w-full max-w-[570px] lg:h-[560px]">
+      <div className="absolute left-1/2 top-[47%] h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-emerald-400/22 bg-emerald-400/10 blur-[1px]" />
+      <div className="absolute left-1/2 top-[46%] h-[390px] w-[390px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400/16 blur-[70px]" />
+      <div className="absolute right-8 top-16 hidden h-[170px] w-[170px] rounded-full bg-[radial-gradient(rgba(74,222,128,0.33)_1px,transparent_1px)] bg-[size:10px_10px] opacity-30 md:block" />
+
+      <div className="absolute left-1/2 top-0 z-10 h-[462px] w-[236px] -translate-x-1/2 rounded-[42px] border border-white/24 bg-gradient-to-b from-slate-500/60 to-slate-950 p-2 shadow-[0_28px_72px_rgba(0,0,0,0.52)] md:h-[492px] md:w-[252px]">
+        <div className="h-full overflow-hidden rounded-[34px] border border-white/10 bg-[#030b08] p-4">
+          <div className="mx-auto h-5 w-24 rounded-full bg-black/75" />
+          <div className="mt-5 flex items-center justify-between">
+            <img src="/logo-full.png" alt="FluxoCerto" className="h-auto w-28 object-contain" />
+            <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-black text-emerald-300">
+              360
+            </span>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-emerald-300/14 bg-white/[0.035] p-4">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+              <span>Resumo do mês</span>
+              <span className="text-slate-500">Maio 2025</span>
+            </div>
+            <p className="mt-6 text-xs text-slate-400">Lucro real</p>
+            <p className="mt-1 text-3xl font-black tracking-[-0.04em] text-emerald-400">R$ 4.680,00</p>
+            <p className="mt-2 text-xs font-bold text-emerald-300">+12% vs mês anterior</p>
+            <div className="mt-4 h-28 rounded-2xl bg-[linear-gradient(180deg,rgba(34,197,94,0.16),transparent)] p-3">
+              <svg viewBox="0 0 220 92" className="h-full w-full">
+                <path d="M4 76 C30 72 46 66 64 66 C88 67 94 58 116 54 C142 49 148 35 171 30 C192 25 202 16 216 10" fill="none" stroke="#4ade80" strokeWidth="4" strokeLinecap="round" />
+                <path d="M4 76 C30 72 46 66 64 66 C88 67 94 58 116 54 C142 49 148 35 171 30 C192 25 202 16 216 10 L216 92 L4 92 Z" fill="url(#phoneGradient)" opacity="0.38" />
+                <defs>
+                  <linearGradient id="phoneGradient" x1="110" x2="110" y1="10" y2="92">
+                    <stop stopColor="#22c55e" />
+                    <stop offset="1" stopColor="#22c55e" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute right-0 top-16 z-20 hidden w-40 rounded-2xl border border-emerald-300/14 bg-[#05110e]/78 p-4 shadow-[0_16px_46px_rgba(0,0,0,0.34)] backdrop-blur-xl md:block">
+        <Lock className="h-8 w-8 rounded-xl border border-emerald-300/20 bg-emerald-400/10 p-2 text-emerald-300" />
+        <p className="mt-3 text-xs font-black text-white">Seus dados 100% protegidos</p>
+        <p className="mt-2 text-xs leading-5 text-slate-400">Segurança bancária de ponta a ponta.</p>
+      </div>
+
+      <div className="absolute bottom-5 left-1/2 z-30 w-[min(94vw,510px)] -translate-x-1/2 rotate-[-6deg] rounded-[24px] border border-emerald-300/18 bg-[#06110f]/88 p-5 shadow-[0_26px_72px_rgba(0,0,0,0.50)] backdrop-blur-2xl md:bottom-8 md:left-[53%]">
+        <div className="grid gap-5 sm:grid-cols-[150px_1fr]">
+          <div>
+            <p className="text-sm font-black text-white">Distribuição de potes</p>
+            <div className="mt-5 grid h-32 w-32 place-items-center rounded-full bg-[conic-gradient(#22c55e_0_50%,#0ea5e9_50%_90%,#fbbf24_90%_100%)]">
+              <div className="grid h-20 w-20 place-items-center rounded-full bg-[#06110f] text-center">
+                <span className="text-sm font-black text-white">R$ 300,00</span>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-4 pt-8">
+            <PotRow label="Pessoal" amount="R$ 150,00 / R$ 200,00" percent="50%" color="emerald" />
+            <PotRow label="Negócio" amount="R$ 120,00 / R$ 400,00" percent="40%" color="sky" />
+            <PotRow label="Reserva" amount="R$ 30,00 / R$ 600,00" percent="10%" color="amber" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PotRow({
+  label,
+  amount,
+  percent,
+  color,
+}: {
+  label: string;
+  amount: string;
+  percent: string;
+  color: "emerald" | "sky" | "amber";
+}) {
+  const colorClass = color === "emerald" ? "bg-emerald-400 text-emerald-300" : color === "sky" ? "bg-sky-400 text-sky-300" : "bg-amber-300 text-amber-300";
+  const widthClass = percent === "50%" ? "w-1/2" : percent === "40%" ? "w-[40%]" : "w-[10%]";
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-sm font-bold">
+        <span className="text-slate-100">{label}</span>
+        <span className={colorClass.split(" ")[1]}>{percent}</span>
+      </div>
+      <p className="mt-1 text-xs text-slate-400">{amount}</p>
+      <div className="mt-2 h-2 rounded-full bg-white/10">
+        <div className={`${widthClass} h-full rounded-full ${colorClass.split(" ")[0]}`} />
+      </div>
+    </div>
+  );
+}
+
+function ProductShowcase() {
+  return (
+    <div id="como-funciona" className="relative min-h-[420px]">
+      <div className="absolute inset-0 rounded-full bg-emerald-400/13 blur-[80px]" />
+      <div className="relative mx-auto mt-4 w-full max-w-[760px]">
+        <div className="rounded-t-[28px] border border-emerald-300/16 bg-gradient-to-b from-slate-700/70 to-[#07120f] p-3 shadow-[0_30px_85px_rgba(0,0,0,0.46)]">
+          <div className="overflow-hidden rounded-2xl border border-white/8 bg-[#030b08]">
+            <div className="grid min-h-[310px] grid-cols-[120px_1fr]">
+              <aside className="border-r border-emerald-300/10 bg-black/24 p-4">
+                <img src="/logo-full.png" alt="FluxoCerto" className="h-auto w-24 object-contain" />
+                <div className="mt-6 grid gap-3 text-[11px] font-bold text-slate-400">
+                  {["Início", "Fluxo de Caixa", "Potes", "Metas", "Consultor IA", "Relatórios"].map((item, index) => (
+                    <span key={item} className={index === 0 ? "text-emerald-300" : ""}>{item}</span>
+                  ))}
+                </div>
+              </aside>
+
+              <div className="p-5">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <DashboardCard title="Lucro líquido" value="R$ 4.680,00" tone="green" />
+                  <DashboardCard title="Entradas" value="R$ 7.500,00" tone="green" />
+                  <DashboardCard title="Saídas" value="R$ 2.820,00" tone="red" />
+                </div>
+                <div className="mt-4 grid gap-4 sm:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-2xl border border-emerald-300/10 bg-white/[0.035] p-4">
+                    <p className="text-xs font-bold text-slate-300">Evolução financeira</p>
+                    <div className="mt-3 h-32 rounded-xl bg-[linear-gradient(180deg,rgba(34,197,94,0.12),transparent)] p-3">
+                      <svg viewBox="0 0 300 120" className="h-full w-full">
+                        <path d="M8 102 C58 100 82 94 116 96 C154 98 170 48 198 45 C232 41 248 20 292 16" fill="none" stroke="#4ade80" strokeWidth="4" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-emerald-300/10 bg-white/[0.035] p-4">
+                    <p className="text-xs font-bold text-slate-300">Distribuição de potes</p>
+                    <div className="mt-4 flex items-center gap-4">
+                      <div className="grid h-24 w-24 shrink-0 place-items-center rounded-full bg-[conic-gradient(#22c55e_0_50%,#0ea5e9_50%_90%,#fbbf24_90%_100%)]">
+                        <div className="h-14 w-14 rounded-full bg-[#030b08]" />
+                      </div>
+                      <div className="grid gap-2 text-xs font-bold text-slate-300">
+                        <span className="text-emerald-300">Pessoal 50%</span>
+                        <span className="text-sky-300">Negócio 40%</span>
+                        <span className="text-amber-300">Reserva 10%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto h-4 w-[84%] rounded-b-3xl bg-gradient-to-r from-slate-900 via-slate-500 to-slate-900" />
+
+        <div className="absolute -bottom-8 right-2 w-36 rounded-[30px] border border-white/20 bg-gradient-to-b from-slate-700 to-slate-950 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.48)] sm:right-8 sm:w-44">
+          <div className="rounded-[24px] border border-emerald-300/10 bg-[#030b08] p-3">
+            <Smartphone className="ml-auto h-4 w-4 text-emerald-300" />
+            <p className="mt-4 text-[11px] font-bold text-slate-400">Resumo do mês</p>
+            <p className="mt-2 text-lg font-black text-emerald-300">R$ 4.680</p>
+            <div className="mt-3 h-14 rounded-xl bg-[linear-gradient(180deg,rgba(34,197,94,0.16),transparent)]" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardCard({ title, value, tone }: { title: string; value: string; tone: "green" | "red" }) {
+  return (
+    <div className="rounded-2xl border border-emerald-300/10 bg-white/[0.035] p-4">
+      <p className="text-[11px] font-bold text-slate-400">{title}</p>
+      <p className={`mt-2 text-base font-black ${tone === "green" ? "text-emerald-300" : "text-red-300"}`}>{value}</p>
+    </div>
+  );
+}
+
+function FooterColumn({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <h3 className="text-sm font-black text-white">{title}</h3>
+      <div className="mt-4 grid gap-3">
+        {items.map((item) => (
+          <a key={item} href="#recursos" className="text-sm text-slate-400 transition hover:text-emerald-300">
+            {item}
+          </a>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,20 @@
 import { useState } from "react";
+import {
+  AlertCircle,
+  ArrowRight,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Mail,
+  ShieldCheck,
+  UserCircle2,
+} from "lucide-react";
+
 import { useApp } from "@/contexts/AppContext";
 import { ScreenType, User } from "@/lib/types";
 import { isValidEmail, isValidPassword } from "@/lib/utils";
-import { Eye, EyeOff, Lock, Mail, UserCircle2 } from "lucide-react";
 import { authenticateUser, createAccount, requestPasswordReset } from "@/lib/auth";
 
 type AuthMode = "login" | "register" | "recover";
@@ -29,22 +41,22 @@ export default function LoginScreen() {
     setInfo("");
 
     if (!email.trim()) {
-      setError("Email e obrigatorio");
+      setError("Email é obrigatório");
       return;
     }
 
     if (!isValidEmail(email)) {
-      setError("Email invalido");
+      setError("Email inválido");
       return;
     }
 
     if (mode !== "recover" && !password) {
-      setError("Senha e obrigatoria");
+      setError("Senha é obrigatória");
       return;
     }
 
     if (mode !== "recover" && !isValidPassword(password)) {
-      setError("Senha deve ter no minimo 6 caracteres");
+      setError("Senha deve ter no mínimo 6 caracteres");
       return;
     }
 
@@ -56,10 +68,10 @@ export default function LoginScreen() {
       if (mode === "recover") {
         const result = requestPasswordReset(email);
         if (!result.ok) {
-          setError(result.error ?? "Nao foi possivel processar sua solicitacao");
+          setError(result.error ?? "Não foi possível processar sua solicitação");
           return;
         }
-        setInfo(result.message ?? "Solicitacao enviada.");
+        setInfo(result.message ?? "Solicitação enviada.");
         setMode("login");
         return;
       }
@@ -67,7 +79,7 @@ export default function LoginScreen() {
       if (mode === "register") {
         const created = createAccount({ name, email, password });
         if (!created.ok || !created.user) {
-          setError(created.error ?? "Nao foi possivel criar a conta");
+          setError(created.error ?? "Não foi possível criar a conta");
           return;
         }
 
@@ -83,169 +95,241 @@ export default function LoginScreen() {
 
       proceedAfterAuth(authenticated.user, !!authenticated.onboardingCompleted);
     } catch {
-      setError("Erro ao processar autenticacao");
+      setError("Erro ao processar autenticação");
     } finally {
       setIsLoading(false);
     }
   };
 
+  const title =
+    mode === "register" ? "Crie sua conta" : mode === "recover" ? "Recupere seu acesso" : "Entrar na sua conta";
+  const subtitle =
+    mode === "register"
+      ? "Comece a organizar seu dinheiro em poucos minutos."
+      : mode === "recover"
+        ? "Informe seu email para receber as instruções."
+        : "Continue de onde parou.";
+  const submitLabel = mode === "register" ? "Criar conta" : mode === "recover" ? "Recuperar senha" : "Entrar";
+  const loadingLabel = mode === "register" ? "Criando conta..." : mode === "recover" ? "Processando..." : "Entrando...";
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#030706] p-4 text-[#f6fffb]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(25,245,193,0.14),transparent_28%),radial-gradient(circle_at_12%_16%,rgba(25,245,193,0.18),transparent_52%),radial-gradient(circle_at_86%_8%,rgba(17,199,157,0.14),transparent_34%),radial-gradient(circle_at_50%_110%,rgba(30,220,141,0.10),transparent_44%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(155deg,rgba(7,20,17,0.70),rgba(3,7,6,0.95))]" />
+    <div
+      className="min-h-screen overflow-x-hidden bg-[#020617] text-white antialiased"
+      style={{ fontFamily: '"Gotan", "Inter", "Montserrat", "Arial", sans-serif' }}
+    >
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(34,197,94,0.18),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(16,185,129,0.12),transparent_28%),radial-gradient(circle_at_55%_110%,rgba(34,197,94,0.12),transparent_40%),linear-gradient(150deg,#020617_0%,#030b0a_52%,#020617_100%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(rgba(34,197,94,0.12)_1px,transparent_1px)] bg-[size:30px_30px] opacity-[0.07]" />
 
-      <div className="relative z-10 w-full max-w-[500px]">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <img
-            src="/logo-full.png"
-            alt="FluxoCerto 360"
-            className="mb-3 block h-auto w-[270px] sm:w-[310px]"
-            style={{
-              objectFit: "contain",
-              filter: "brightness(1) contrast(2) saturate(2) drop-shadow(0 0 16px rgba(25,245,193,0.20))",
-            }}
-          />
-          <p className="max-w-[440px] text-sm font-medium leading-6 tracking-[0.01em] text-[rgba(230,255,247,0.84)] sm:text-[15px]">
-            Seu controle financeiro com clareza, velocidade e elegancia.
-          </p>
-        </div>
+      <main className="relative z-10 grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(440px,560px)]">
+        <section className="hidden min-h-screen flex-col justify-between border-r border-emerald-300/10 px-10 py-10 lg:flex xl:px-16">
+          <div>
+            <img
+              src="/logo-full.png"
+              alt="FluxoCerto 360"
+              className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(34,197,94,0.14)]"
+            />
+          </div>
 
-        <div className="rounded-[28px] border border-[rgba(92,255,196,0.20)] bg-[linear-gradient(165deg,rgba(8,24,20,0.76),rgba(6,16,14,0.68))] p-7 shadow-[0_24px_62px_rgba(0,0,0,0.50),0_0_0_1px_rgba(255,255,255,0.04)_inset,0_0_36px_rgba(25,245,193,0.08)] backdrop-blur-[18px] sm:p-8">
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {mode === "register" ? (
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-[rgba(230,255,247,0.88)]">Nome (opcional)</label>
-                <div className="relative">
-                  <UserCircle2 className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[rgba(203,255,236,0.52)]" />
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(event) => {
-                      setName(event.target.value);
-                      setError("");
-                    }}
-                    placeholder="Seu nome"
-                    disabled={isLoading}
-                    className="h-11 w-full rounded-2xl border border-[rgba(92,255,196,0.16)] bg-[rgba(9,27,23,0.58)] pl-10 pr-3 text-sm text-[#f6fffb] outline-none transition placeholder:text-[rgba(203,255,236,0.54)] focus:border-[rgba(25,245,193,0.62)] focus:ring-2 focus:ring-[rgba(25,245,193,0.22)]"
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-[rgba(230,255,247,0.88)]">Email</label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[rgba(203,255,236,0.52)]" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setError("");
-                    setInfo("");
-                  }}
-                  placeholder="seu@email.com"
-                  disabled={isLoading}
-                  className="h-11 w-full rounded-2xl border border-[rgba(92,255,196,0.16)] bg-[rgba(9,27,23,0.58)] pl-10 pr-3 text-sm text-[#f6fffb] outline-none transition placeholder:text-[rgba(203,255,236,0.54)] focus:border-[rgba(25,245,193,0.62)] focus:ring-2 focus:ring-[rgba(25,245,193,0.22)]"
-                />
-              </div>
+          <div className="max-w-[620px]">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold text-emerald-300">
+              <ShieldCheck className="h-4 w-4" />
+              Acesso seguro ao seu painel
             </div>
 
-            {mode !== "recover" ? (
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-[rgba(230,255,247,0.88)]">Senha</label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[rgba(203,255,236,0.52)]" />
+            <h1 className="mt-7 text-[clamp(3.25rem,5.2vw,5rem)] font-black leading-[0.96] tracking-[-0.045em] text-white">
+              Acesse seu controle financeiro.
+            </h1>
+
+            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
+              Entre para continuar organizando seu dinheiro pessoal e do negócio com clareza.
+            </p>
+
+            <div className="mt-8 grid gap-4">
+              {["Separe pessoal e negócio", "Veja seu lucro real", "Tome decisões melhores"].map((benefit) => (
+                <div key={benefit} className="flex items-center gap-3 text-base font-bold text-slate-100">
+                  <span className="grid h-9 w-9 place-items-center rounded-full border border-emerald-300/20 bg-emerald-400/10">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+                  </span>
+                  {benefit}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-w-md rounded-3xl border border-emerald-300/12 bg-white/[0.035] p-5 text-sm leading-6 text-slate-300 backdrop-blur-xl">
+            Seu acesso permanece protegido enquanto você acompanha fluxo, clientes, custos e decisões importantes do negócio.
+          </div>
+        </section>
+
+        <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-10">
+          <div className="w-full max-w-[460px]">
+            <div className="mb-7 flex justify-center lg:hidden">
+              <img src="/logo-full.png" alt="FluxoCerto 360" className="h-11 w-auto object-contain" />
+            </div>
+
+            <div className="rounded-[28px] border border-emerald-300/14 bg-[#05110e]/76 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.44),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl sm:p-8">
+              <div className="mb-7">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300/90">
+                  FluxoCerto 360
+                </p>
+                <h2 className="mt-3 text-3xl font-black leading-tight tracking-[-0.035em] text-white sm:text-4xl">
+                  {title}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{subtitle}</p>
+              </div>
+
+              <form onSubmit={handleAuthSubmit} className="space-y-4">
+                {mode === "register" ? (
+                  <Field label="Nome (opcional)" icon={<UserCircle2 className="h-4 w-4" />}>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(event) => {
+                        setName(event.target.value);
+                        setError("");
+                      }}
+                      placeholder="Seu nome"
+                      disabled={isLoading}
+                      className="h-12 w-full rounded-2xl border border-emerald-300/14 bg-black/24 pl-11 pr-4 text-sm font-semibold text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/50 focus:ring-4 focus:ring-emerald-400/10 disabled:opacity-60"
+                    />
+                  </Field>
+                ) : null}
+
+                <Field label="E-mail" icon={<Mail className="h-4 w-4" />}>
                   <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
+                    type="email"
+                    value={email}
                     onChange={(event) => {
-                      setPassword(event.target.value);
+                      setEmail(event.target.value);
                       setError("");
+                      setInfo("");
                     }}
-                    placeholder="••••••••"
+                    placeholder="seu@email.com"
                     disabled={isLoading}
-                    className="h-11 w-full rounded-2xl border border-[rgba(92,255,196,0.16)] bg-[rgba(9,27,23,0.58)] pl-10 pr-10 text-sm text-[#f6fffb] outline-none transition placeholder:text-[rgba(203,255,236,0.54)] focus:border-[rgba(25,245,193,0.62)] focus:ring-2 focus:ring-[rgba(25,245,193,0.22)]"
+                    className="h-12 w-full rounded-2xl border border-emerald-300/14 bg-black/24 pl-11 pr-4 text-sm font-semibold text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/50 focus:ring-4 focus:ring-emerald-400/10 disabled:opacity-60"
                   />
+                </Field>
+
+                {mode !== "recover" ? (
+                  <Field label="Senha" icon={<Lock className="h-4 w-4" />}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setError("");
+                      }}
+                      placeholder="••••••••"
+                      disabled={isLoading}
+                      className="h-12 w-full rounded-2xl border border-emerald-300/14 bg-black/24 pl-11 pr-12 text-sm font-semibold text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/50 focus:ring-4 focus:ring-emerald-400/10 disabled:opacity-60"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      disabled={isLoading}
+                      className="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-xl text-slate-400 transition hover:bg-emerald-400/10 hover:text-white disabled:opacity-60"
+                      aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </Field>
+                ) : null}
+
+                {error ? (
+                  <div className="flex gap-3 rounded-2xl border border-red-400/24 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+                    <span>{error}</span>
+                  </div>
+                ) : null}
+
+                {info ? (
+                  <div className="flex gap-3 rounded-2xl border border-emerald-300/22 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-50">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                    <span>{info}</span>
+                  </div>
+                ) : null}
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 to-green-500 text-sm font-black text-[#02130b] shadow-[0_16px_34px_rgba(34,197,94,0.28)] transition hover:scale-[1.01] hover:shadow-[0_0_36px_rgba(34,197,94,0.42)] disabled:scale-100 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {loadingLabel}
+                    </>
+                  ) : (
+                    <>
+                      {submitLabel}
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+
+                {mode === "recover" ? (
                   <button
                     type="button"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute right-3 top-3 text-[rgba(203,255,236,0.58)] transition hover:text-[#f6fffb]"
+                    onClick={() => {
+                      setMode("login");
+                      setError("");
+                    }}
+                    className="h-11 w-full rounded-2xl border border-emerald-300/14 bg-white/[0.025] text-sm font-bold text-slate-100 transition hover:border-emerald-300/28 hover:bg-emerald-400/10"
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    Voltar para entrar
                   </button>
-                </div>
-              </div>
-            ) : null}
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode((prev) => (prev === "login" ? "register" : "login"));
+                        setError("");
+                        setInfo("");
+                      }}
+                      className="h-11 w-full rounded-2xl border border-emerald-300/16 bg-white/[0.025] text-sm font-bold text-slate-100 transition hover:border-emerald-300/32 hover:bg-emerald-400/10"
+                    >
+                      {mode === "login" ? "Criar conta" : "Já tem conta? Entrar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode("recover");
+                        setError("");
+                        setInfo("");
+                      }}
+                      className="h-9 w-full rounded-xl text-xs font-bold text-emerald-200/85 transition hover:bg-emerald-400/8 hover:text-emerald-100"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  </>
+                )}
+              </form>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}
 
-            {error ? (
-              <div className="rounded-2xl border border-rose-400/30 bg-rose-500/12 px-3 py-2 text-xs text-rose-200">
-                {error}
-              </div>
-            ) : null}
-            {info ? (
-              <div className="rounded-2xl border border-[rgba(92,255,196,0.28)] bg-[rgba(25,245,193,0.10)] px-3 py-2 text-xs text-[rgba(230,255,247,0.9)]">
-                {info}
-              </div>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="h-11 w-full rounded-2xl border border-[rgba(25,245,193,0.42)] bg-gradient-to-r from-[#11c79d] via-[#19f5c1] to-[#17dcae] text-sm font-bold text-[#03231a] shadow-[0_12px_28px_rgba(25,245,193,0.24)] transition hover:brightness-110 hover:shadow-[0_14px_30px_rgba(25,245,193,0.30)] disabled:opacity-65"
-            >
-              {isLoading
-                ? mode === "register"
-                  ? "Criando conta..."
-                  : mode === "recover"
-                    ? "Processando..."
-                    : "Entrando..."
-                : mode === "register"
-                  ? "Criar conta"
-                  : mode === "recover"
-                    ? "Recuperar senha"
-                    : "Entrar"}
-            </button>
-
-            {mode === "recover" ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("login");
-                  setError("");
-                }}
-                className="h-10 w-full rounded-xl border border-transparent text-xs font-semibold text-[rgba(203,255,236,0.82)] transition hover:border-[rgba(92,255,196,0.2)] hover:bg-[rgba(10,28,24,0.7)]"
-              >
-                Voltar para entrar
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode((prev) => (prev === "login" ? "register" : "login"));
-                    setError("");
-                    setInfo("");
-                  }}
-                  className="h-11 w-full rounded-2xl border border-[rgba(92,255,196,0.20)] bg-[rgba(8,23,20,0.44)] text-sm font-semibold text-[#f6fffb] transition hover:bg-[rgba(11,37,31,0.82)]"
-                >
-                  {mode === "login" ? "Criar conta" : "Ja tem conta? Entrar"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("recover");
-                    setError("");
-                    setInfo("");
-                  }}
-                  className="h-10 w-full rounded-xl border border-transparent text-xs font-semibold text-[rgba(203,255,236,0.82)] transition hover:border-[rgba(92,255,196,0.2)] hover:bg-[rgba(10,28,24,0.7)]"
-                >
-                  Esqueci minha senha
-                </button>
-              </>
-            )}
-          </form>
-        </div>
+function Field({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-bold text-slate-200">{label}</label>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-slate-500">
+          {icon}
+        </span>
+        {children}
       </div>
     </div>
   );

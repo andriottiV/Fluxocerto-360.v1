@@ -21,17 +21,17 @@ export default function DashboardSidebar({
     <aside className="fd-sidebar">
       <div className="fd-sidebar-brand" aria-label="FluxoCerto 360">
         <img
+          src="/logo-full.png"
+          alt="FluxoCerto 360"
+          className="fd-sidebar-logo-full"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+        <img
           src="/icon.png"
           alt="FluxoCerto"
-          className="fd-sidebar-logo-full"
-          style={
-            {
-              width: "36px",
-              height: "36px",
-              display: "block",
-              objectFit: "contain",
-            }
-          }
+          className="fd-sidebar-logo-icon"
           onError={(event) => {
             event.currentTarget.style.display = "none";
           }}
