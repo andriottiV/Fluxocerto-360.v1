@@ -92,12 +92,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 80667,
+                  "duration": 62702,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-05-01T11:16:32.241Z",
+                  "startTime": "2026-05-01T11:58:25.047Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -107,7 +107,7 @@
           ],
           "id": "9c17aca683c00fd42cd0-4d09271d71f6926a815c",
           "file": "fluxocerto360.audit.spec.ts",
-          "line": 496,
+          "line": 602,
           "column": 1
         }
       ]
@@ -115,8 +115,8 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-05-01T11:16:28.732Z",
-    "duration": 88486.624,
+    "startTime": "2026-05-01T11:58:21.464Z",
+    "duration": 67715.514,
     "expected": 1,
     "skipped": 0,
     "unexpected": 0,

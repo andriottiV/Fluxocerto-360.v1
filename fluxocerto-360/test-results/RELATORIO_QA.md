@@ -1,6 +1,6 @@
 # RELATÓRIO QA - FluxoCerto360
 
-Gerado em: 01/05/2026, 08:17:55
+Gerado em: 01/05/2026, 08:59:27
 Status geral: **APROVADO**
 
 ## Telas testadas
@@ -51,8 +51,10 @@ Status geral: **APROVADO**
 - **PASS** Entrada R$100 no crédito: Bruto R$100, taxa R$3,49, líquido R$96,51 e potes receberam somente o líquido.
 - **PASS** Saída por pote: Saída reduziu somente Pessoal em R$10.
 - **PASS** Lucro líquido não confundido com saída pessoal: Entrada - taxas permaneceu R$96,51 no cenário sem custos.
+- **PASS** Entrada por voz reflete no dashboard: Voz usa o mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard foram atualizados.
 
 ## Checks de produto e navegação
+- **PASS** Sincronização por reload: Dados financeiros persistiram e foram recarregados na sessão simulada.
 - **PASS** Regra admin: Administração não apareceu para usuário comum.
 - **PASS** Consultor Flux: Uma pergunta gerou exatamente uma resposta do Flux, sem loop imediato.
 - **PASS** Validação formulário vazio: Entrada manual vazia exibiu erro de validação.
@@ -80,6 +82,8 @@ Status geral: **APROVADO**
 - test-results/screenshots/qa-chromium-07-dashboard-zerado.png
 - test-results/screenshots/qa-chromium-08-modal-entrada-credito.png
 - test-results/screenshots/qa-chromium-09-modal-saida-pote.png
+- test-results/screenshots/qa-chromium-10-voz-mobile-preview.png
+- test-results/screenshots/qa-chromium-10-voz-dashboard-atualizado.png
 - test-results/screenshots/qa-chromium-10-nav-inicio.png
 - test-results/screenshots/qa-chromium-10-nav-fluxo-caixa.png
 - test-results/screenshots/qa-chromium-10-nav-consultor.png
@@ -126,15 +130,12 @@ Status geral: **APROVADO**
 3. Refinar UX/copy indicada em P2 antes de aquisição paga.
 
 ## Correções aplicadas nesta rodada
-- Notificações: painel do sino fecha ao clicar/tocar fora e mantém as ações de marcar como vista e limpar todas.
-- Toasts: toasts agora possuem botão de fechar e são dispensados ao clicar/tocar fora da notificação.
-- Modais: modais de entrada/saída e registro por voz fecham ao tocar no backdrop, mantendo o botão de fechar.
-- Mobile: ajustes responsivos aplicados para 360px e 390px com cards mais compactos, listas/scroll horizontal em blocos pesados, menor glow e alvos de toque maiores.
-- Tema claro/escuro: reforço de contraste em cards, textos, inputs e botões para evitar texto claro em fundo claro.
-- Voz mobile: FAB de voz mais acessível no mobile, com label visual, estados de ouvindo/processando/erro/revisão e modal usando Web Speech API com fallback quando o navegador não suporta.
+- Entrada por voz validada no mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard.
+- Sincronização validada por reload/nova sessão simulada no QA.
+- Quando Supabase está configurado, o app reconsulta dados ao focar a janela e por polling leve para refletir alterações de outro dispositivo.
+- Fallback local continua ativo quando Supabase não está configurado.
 
 ## Status do comando de voz
 - Botão mobile disponível no FAB global.
-- Abre o mesmo fluxo de voz usado no desktop.
-- Mantém transcrição, processamento, revisão, confirmação, cancelamento e fallback para navegador sem suporte.
-- Não altera regras financeiras: entrada continua bruta, taxas continuam antes da distribuição, saída reduz o pote escolhido e meta mensal não vira saldo.
+- Comando testado: entrada 100 no crédito corte João.
+- Resultado esperado validado: entrou R$100, taxa R$3,49, líquido R$96,51 e potes atualizados.

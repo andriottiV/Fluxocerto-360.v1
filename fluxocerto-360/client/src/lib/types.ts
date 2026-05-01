@@ -128,6 +128,7 @@ export interface Transaction {
   description: string;
   amount: number;
   date: string;
+  createdAt?: string;
   category: string;
   account: string;
   origin?: string;
@@ -142,6 +143,7 @@ export interface Transaction {
   feePercent?: number;
   feeAmount?: number;
   netAmount?: number;
+  potDistribution?: Partial<PotDistribution>;
   clientId?: string;
   clientName?: string;
   serviceName?: string;

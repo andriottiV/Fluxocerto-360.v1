@@ -243,6 +243,7 @@ function extractClientName(normalizedText: string) {
     /\bentrou\s+da\s+([a-z0-9\s]+)/,
     /\b(?:recebi|entrou|ganhei|caiu)\b.*?\bdo\s+([a-z0-9\s]+)/,
     /\b(?:recebi|entrou|ganhei|caiu)\b.*?\bda\s+([a-z0-9\s]+)/,
+    /\b(?:corte|servico|serviço|atendimento)\s+(?:do|da|de|com\s+)?([a-z0-9\s]+)/,
   ];
 
   for (const pattern of patterns) {

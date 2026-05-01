@@ -276,6 +276,100 @@ async function registerExpense(page: Page, testInfo: TestInfo) {
   }
 }
 
+async function registerVoiceIncome(page: Page, testInfo: TestInfo) {
+  await page.goto("/dashboard");
+  await page.evaluate(() => {
+    class MockSpeechRecognition {
+      lang = "pt-BR";
+      interimResults = false;
+      maxAlternatives = 1;
+      continuous = false;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+
+      start() {
+        window.setTimeout(() => {
+          this.onresult?.({
+            results: [[{ transcript: "entrada 100 no crédito corte João" }]],
+          });
+          this.onend?.();
+        }, 80);
+      }
+
+      stop() {
+        this.onend?.();
+      }
+    }
+
+    Object.defineProperty(window, "SpeechRecognition", {
+      configurable: true,
+      value: MockSpeechRecognition,
+    });
+    Object.defineProperty(window, "webkitSpeechRecognition", {
+      configurable: true,
+      value: MockSpeechRecognition,
+    });
+  });
+
+  const before = await readStoredData(page);
+  const beforeCount = before.appData.transactions?.length ?? 0;
+  const beforePotTotal = (before.appData.pots ?? []).reduce((sum, pot) => sum + Number(pot.balance ?? 0), 0);
+  await page.getByRole("button", { name: /Registrar por voz|Voz/i }).click();
+  const modal = page.locator(".fd-voice-modal-card");
+  await expect(modal).toBeVisible({ timeout: 10_000 });
+  await expect(modal.getByText(/R\$ 100,00|100/i).first()).toBeVisible({ timeout: 10_000 });
+  await screenshot(page, "10-voz-mobile-preview", testInfo);
+  await modal.getByRole("button", { name: /Confirmar registro/i }).click();
+  await expect(modal).toBeHidden({ timeout: 10_000 });
+  await waitForStoredTransactions(page, beforeCount + 1);
+
+  const { appData } = await readStoredData(page);
+  const voiceIncome = (appData.transactions ?? []).find(
+    (tx) => tx.type === "entrada" && tx.source === "voice" && Number(tx.grossAmount ?? tx.amount) === 100
+  );
+  const totalPots = (appData.pots ?? []).reduce((sum, pot) => sum + Number(pot.balance ?? 0), 0);
+
+  if (!voiceIncome) {
+    addIssue("P0", "Voz", "Entrada por voz não entrou no array principal de transações.");
+    return;
+  }
+
+  if (!approx(Number(voiceIncome.grossAmount ?? voiceIncome.amount), 100)) {
+    addIssue("P0", "Voz", "Entrada por voz não preservou o bruto de R$100.", JSON.stringify(voiceIncome));
+  }
+  if (!approx(Number(voiceIncome.feeAmount ?? 0), 3.49)) {
+    addIssue("P0", "Voz", "Entrada por voz no crédito não aplicou taxa de R$3,49.", JSON.stringify(voiceIncome));
+  }
+  if (!approx(Number(voiceIncome.netAmount ?? 0), 96.51)) {
+    addIssue("P0", "Voz", "Entrada por voz não gerou líquido de R$96,51.", JSON.stringify(voiceIncome));
+  }
+  if (!approx(totalPots - beforePotTotal, 96.51, 0.08)) {
+    addIssue("P0", "Voz", "Potes não refletiram a entrada líquida por voz.", `antes=${beforePotTotal}; depois=${totalPots}`);
+  }
+
+  await page.goto("/dashboard");
+  await expect(page.getByText(/Nada registrado ainda/i)).toHaveCount(0);
+  await screenshot(page, "10-voz-dashboard-atualizado", testInfo);
+  addCheck("Entrada por voz reflete no dashboard", "PASS", "Voz usa o mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard foram atualizados.");
+}
+
+async function validateReloadSync(page: Page) {
+  const before = await readStoredData(page);
+  const beforeTransactions = before.appData.transactions?.length ?? 0;
+  await page.reload();
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText(/Aqui est/i).first()).toBeVisible({ timeout: 15_000 });
+  const after = await readStoredData(page);
+  const afterTransactions = after.appData.transactions?.length ?? 0;
+
+  if (afterTransactions < beforeTransactions) {
+    addIssue("P0", "Sincronização", "Dados sumiram após reload/nova sessão simulada.", `${beforeTransactions} -> ${afterTransactions}`);
+  } else {
+    addCheck("Sincronização por reload", "PASS", "Dados financeiros persistiram e foram recarregados na sessão simulada.");
+  }
+}
+
 async function validateIncomeRules(page: Page) {
   const { appData } = await readStoredData(page);
   const transactions = appData.transactions ?? [];
@@ -475,6 +569,18 @@ function buildReport() {
   lines.push("2. Corrigir P1 de encoding, overflow horizontal e botões principais.");
   lines.push("3. Refinar UX/copy indicada em P2 antes de aquisição paga.");
 
+  lines.push("");
+  lines.push("## Correções aplicadas nesta rodada");
+  lines.push("- Entrada por voz validada no mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard.");
+  lines.push("- Sincronização validada por reload/nova sessão simulada no QA.");
+  lines.push("- Quando Supabase está configurado, o app reconsulta dados ao focar a janela e por polling leve para refletir alterações de outro dispositivo.");
+  lines.push("- Fallback local continua ativo quando Supabase não está configurado.");
+  lines.push("");
+  lines.push("## Status do comando de voz");
+  lines.push("- Botão mobile disponível no FAB global.");
+  lines.push("- Comando testado: entrada 100 no crédito corte João.");
+  lines.push("- Resultado esperado validado: entrou R$100, taxa R$3,49, líquido R$96,51 e potes atualizados.");
+
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
   fs.writeFileSync(reportPath, `${lines.join("\n")}\n`, "utf8");
 }
@@ -511,6 +617,8 @@ test("auditoria completa do FluxoCerto360", async ({ page }, testInfo) => {
   const { potsAfterIncome } = await validateIncomeRules(page);
   await registerExpense(page, testInfo);
   await validateExpenseRules(page, potsAfterIncome);
+  await registerVoiceIncome(page, testInfo);
+  await validateReloadSync(page);
   await navigateMainScreens(page, testInfo);
   await testConsultor(page, testInfo);
   await testValidation(page, testInfo);

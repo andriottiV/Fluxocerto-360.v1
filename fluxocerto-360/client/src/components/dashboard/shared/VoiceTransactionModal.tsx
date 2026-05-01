@@ -104,7 +104,7 @@ export default function VoiceTransactionModal({
   onSuccess,
   onStateChange,
 }: VoiceTransactionModalProps) {
-  const { accounts, pots, addTransaction, clients, addClient, updateClient } = useApp();
+  const { accounts, pots, potDistribution, addTransaction, clients, addClient, updateClient } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [preview, setPreview] = useState<VoicePreviewForm | null>(null);
@@ -262,16 +262,22 @@ export default function VoiceTransactionModal({
           )
         : preview.description.trim();
 
+    const voiceAmount = Number(preview.amount);
+    const createdAt = new Date().toISOString();
     const result = addTransaction({
       type: preview.type,
-      amount: Number(preview.amount),
+      amount: voiceAmount,
+      grossAmount: preview.type === TransactionType.INCOME ? voiceAmount : undefined,
       description: normalizedDescription || (preview.type === TransactionType.INCOME ? "Recebimento" : "Saída por voz"),
-      category: preview.type === TransactionType.INCOME ? "nao_aplicavel" : preview.category.trim() || "outros",
+      category: preview.type === TransactionType.INCOME ? preview.category || "servico" : preview.category.trim() || "outros",
       date: preview.type === TransactionType.INCOME ? todayIso() : preview.date || todayIso(),
+      createdAt,
       account: defaultAccount,
       paymentMethod: preview.paymentMethod,
       potId: resolvePotId(),
       origin: "Comando por voz",
+      source: "voice",
+      potDistribution: preview.type === TransactionType.INCOME ? potDistribution : undefined,
       clientId: linkedClient?.id,
       clientName: linkedClient?.name,
     });

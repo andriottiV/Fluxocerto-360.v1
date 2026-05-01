@@ -139,6 +139,21 @@ function clampCurrency(value: number) {
   return Number(Math.max(0, value).toFixed(2));
 }
 
+function mergeRecordsById<T extends { id: string }>(localItems: T[], remoteItems: T[]) {
+  const merged = new Map<string, T>();
+  localItems.forEach((item) => merged.set(item.id, item));
+  remoteItems.forEach((item) => merged.set(item.id, item));
+  return Array.from(merged.values());
+}
+
+function sortTransactionsForDisplay(items: Transaction[]) {
+  return [...items].sort((a, b) => {
+    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    if (Number.isFinite(dateDiff) && dateDiff !== 0) return dateDiff;
+    return new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
+  });
+}
+
 function resolveConfiguredFeePercent(transaction: TransactionInput, feeSettings: PaymentFeeSetting[]) {
   const fee = transaction.paymentMethod
     ? feeSettings.find((item) => item.method === transaction.paymentMethod)
@@ -747,6 +762,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [applyUserData]
   );
 
+  const syncFromSupabase = useCallback(async () => {
+    if (!hasSupabaseConfig || !user?.id || isSupabaseHydratingRef.current) return;
+
+    isSupabaseHydratingRef.current = true;
+    try {
+      const [remoteTransactions, remotePots, remoteClients, remoteCosts] = await Promise.all([
+        getSupabaseTransactions(user.id),
+        getSupabasePots(user.id),
+        getSupabaseClients(user.id),
+        getSupabaseCosts(user.id),
+      ]);
+
+      if (remoteTransactions.error && remotePots.error && remoteClients.error && remoteCosts.error) return;
+
+      setTransactions((prev) =>
+        sortTransactionsForDisplay(
+          mergeRecordsById(prev, remoteTransactions.error ? [] : remoteTransactions.data ?? [])
+        )
+      );
+      setPots((prev) => mergeRecordsById(prev, remotePots.error ? [] : remotePots.data ?? []));
+      setClients((prev) => mergeRecordsById(prev, remoteClients.error ? [] : remoteClients.data ?? []));
+      setCosts((prev) => mergeRecordsById(prev, remoteCosts.error ? [] : remoteCosts.data ?? []));
+    } finally {
+      isSupabaseHydratingRef.current = false;
+      setIsSupabaseSyncReady(true);
+    }
+  }, [user?.id]);
+
   const setUser = useCallback(
     (nextUser: User | null) => {
       setUserState(nextUser);
@@ -878,6 +921,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [clients, costs, isSupabaseSyncReady, pots, transactions, user?.id]);
 
   useEffect(() => {
+    if (!hasSupabaseConfig || !user?.id) return;
+
+    const handleFocus = () => {
+      void syncFromSupabase();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void syncFromSupabase();
+      }
+    };
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void syncFromSupabase();
+      }
+    }, 30_000);
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [syncFromSupabase, user?.id]);
+
+  useEffect(() => {
     if (!user?.id) return;
     if (transactions.length > 0) {
       unlockAchievement("first_record");
@@ -931,11 +1001,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       id: transactionInput.id ?? createId("tx"),
       ownerId: user?.id,
       ...(incomeAmounts ?? { amount: normalizedAmount }),
+      createdAt: transactionInput.createdAt ?? new Date().toISOString(),
       description: transactionInput.description.trim(),
       category: transactionInput.category.trim(),
       account: transactionInput.account.trim(),
       origin: transactionInput.origin?.trim() || undefined,
+      source: transactionInput.source?.trim() || undefined,
+      sourceId: transactionInput.sourceId?.trim() || undefined,
       notes: transactionInput.notes?.trim() || undefined,
+      potDistribution:
+        transactionInput.type === TransactionType.INCOME
+          ? transactionInput.potDistribution ?? potDistribution
+          : transactionInput.potDistribution,
     };
 
     setTransactions((prev) => [transaction, ...prev]);
