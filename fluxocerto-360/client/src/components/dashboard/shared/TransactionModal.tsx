@@ -336,6 +336,7 @@ export default function TransactionModal({
       paymentMethod: servicePayment,
       potId: businessPot?.id,
       origin: "Lancamento rapido",
+      source: "manual",
     } as any);
 
     if (!result.ok) {
@@ -378,6 +379,7 @@ export default function TransactionModal({
       paymentMethod: manualIncome.paymentMethod,
       potId: businessPot?.id,
       origin: manualIncome.origin.trim() || "Extra",
+      source: "manual",
     } as any);
 
     if (!result.ok) {
@@ -412,12 +414,16 @@ export default function TransactionModal({
     const result = addTransaction({
       type: TransactionType.EXPENSE,
       amount: Number(expense.value),
+      grossAmount: Number(expense.value),
+      feeAmount: 0,
+      netAmount: Number(expense.value),
       description: expense.description,
       category: expense.category,
       date: expense.date || todayIso(),
       account: defaultAccount,
       potId: expense.potId,
       origin: "Saida rapida",
+      source: "manual",
     });
 
     if (!result.ok) {

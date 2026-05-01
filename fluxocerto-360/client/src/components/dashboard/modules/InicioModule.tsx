@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowDownCircle,
@@ -56,6 +56,10 @@ function isOnboardingSeed(transaction: Transaction) {
 function isCostInCurrentMonth(cost: { date: string }) {
   const date = parseDateSafe(cost.date);
   return date ? isInCurrentMonth(date) : false;
+}
+
+function parseTransactionDate(transaction: Transaction) {
+  return parseDateSafe(transaction.date) ?? (transaction.createdAt ? parseDateSafe(transaction.createdAt) : null);
 }
 
 function getFixedExpenseTotal(items: Array<{ amount: number }>) {
@@ -128,32 +132,43 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
   const monthTransactions = useMemo(
     () =>
       realTransactions.filter((tx) => {
-        const date = parseDateSafe(tx.date);
+        const date = parseTransactionDate(tx);
         return date ? isInCurrentMonth(date) : false;
       }),
     [realTransactions]
   );
-  const monthTotals = useMemo(() => calculateTotals(monthTransactions), [monthTransactions]);
+  const dashboardTransactions = useMemo(
+    () => (monthTransactions.length > 0 ? monthTransactions : realTransactions),
+    [monthTransactions, realTransactions]
+  );
+  const dashboardUsesCurrentMonth = monthTransactions.length > 0 || realTransactions.length === 0;
+  const dashboardTotals = useMemo(() => calculateTotals(dashboardTransactions), [dashboardTransactions]);
   const monthCosts = useMemo(
     () => costs.filter(isCostInCurrentMonth).reduce((sum, cost) => sum + Math.max(0, cost.amount), 0),
     [costs]
+  );
+  const dashboardCosts = useMemo(
+    () =>
+      dashboardUsesCurrentMonth
+        ? monthCosts
+        : costs.reduce((sum, cost) => sum + Math.max(0, cost.amount), 0),
+    [costs, dashboardUsesCurrentMonth, monthCosts]
   );
   const fixedCommitments = useMemo(
     () => getFixedExpenseTotal(onboardingData.fixedExpenses ?? []),
     [onboardingData.fixedExpenses]
   );
-  const hasRealIncome = monthTransactions.some((tx) => tx.type === TransactionType.INCOME);
-  const hasAnyRealMovement = monthTransactions.length > 0;
+  const hasRealIncome = dashboardTransactions.some((tx) => tx.type === TransactionType.INCOME);
+  const hasAnyRealMovement = dashboardTransactions.length > 0;
   const realPotBalances = useMemo(
     () => buildRealPotBalances(realTransactions, pots, potDistribution),
     [potDistribution, pots, realTransactions]
   );
   const metaMensal = Number(onboardingData.metaMensal ?? 0);
-  const lucroLiquido = hasRealIncome ? Number((monthTotals.income - monthTotals.fees - monthCosts).toFixed(2)) : 0;
-  const reservedCommitment = hasRealIncome
-    ? Number((realPotBalances.reserve + fixedCommitments).toFixed(2))
+  const lucroLiquido = hasRealIncome ? Number((dashboardTotals.income - dashboardTotals.fees - dashboardCosts).toFixed(2)) : 0;
+  const dinheiroLivre = hasRealIncome
+    ? Number(Math.max(0, realPotBalances.personal + realPotBalances.business - fixedCommitments).toFixed(2))
     : 0;
-  const dinheiroLivre = hasRealIncome ? Number(Math.max(0, lucroLiquido - reservedCommitment).toFixed(2)) : 0;
 
   const proactiveInsights = useMemo(
     () =>
@@ -180,7 +195,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     }
 
     const positiveResult = lucroLiquido >= 0;
-    const reserveBase = Math.max(monthCosts, fixedCommitments, 1);
+    const reserveBase = Math.max(dashboardCosts, fixedCommitments, 1);
     const reserveScore = Math.min(realPotBalances.reserve / reserveBase, 1);
     const index = Math.round(35 + (positiveResult ? 35 : 10) + reserveScore * 30);
 
@@ -199,10 +214,15 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       helper: "Continue registrando entradas e saídas para manter clareza.",
       tone: "positive" as const,
     };
-  }, [fixedCommitments, hasRealIncome, lucroLiquido, monthCosts, realPotBalances.reserve]);
+  }, [dashboardCosts, fixedCommitments, hasRealIncome, lucroLiquido, realPotBalances.reserve]);
 
   const evolutionSeries = useMemo(() => {
-    const now = new Date();
+    const latestTransactionDate = realTransactions.reduce<Date | null>((latest, tx) => {
+      const parsed = parseTransactionDate(tx);
+      if (!parsed) return latest;
+      return !latest || parsed.getTime() > latest.getTime() ? parsed : latest;
+    }, null);
+    const now = hasAnyRealMovement && latestTransactionDate ? latestTransactionDate : new Date();
     const days = Array.from({ length: 7 }).map((_, offset) => {
       const date = new Date(now);
       date.setDate(now.getDate() - (6 - offset));
@@ -214,7 +234,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       const dayStart = date.getTime();
       const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
       const dayTx = realTransactions.filter((tx) => {
-        const parsed = parseDateSafe(tx.date);
+        const parsed = parseTransactionDate(tx);
         if (!parsed) return false;
         const time = parsed.getTime();
         return time >= dayStart && time <= dayEnd;
@@ -259,7 +279,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       best: rows.reduce((best, row) => (row.net > best.net ? row : best), rows[0] ?? { label: "-", net: 0 }),
       dailyAverage: rows.reduce((sum, row) => sum + row.net, 0) / Math.max(rows.length, 1),
     };
-  }, [realTransactions]);
+  }, [hasAnyRealMovement, realTransactions]);
 
   const potDistributionChart = useMemo(() => {
     const entries = [
@@ -311,17 +331,29 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     ? "Registre sua primeira entrada para eu analisar seu dinheiro."
     : proactiveInsights[0]?.message ?? intelligence.greetingMessage;
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.debug("[FluxoCerto Dashboard]", {
+      officialTransactions: realTransactions.length,
+      dashboardTransactions: dashboardTransactions.length,
+      firstTransaction: realTransactions[0],
+      lastTransaction: realTransactions[realTransactions.length - 1],
+      totals: dashboardTotals,
+      realPotBalances,
+    });
+  }, [dashboardTotals, dashboardTransactions.length, realPotBalances, realTransactions]);
+
   const summaryCards = [
     {
       label: "Entradas",
-      value: formatCurrency(monthTotals.income),
+      value: formatCurrency(dashboardTotals.income),
       helper: hasRealIncome ? "Entradas reais no mês" : "Sem entradas reais",
       icon: ArrowDownCircle,
       tone: "success",
     },
     {
       label: "Saídas",
-      value: formatCurrency(monthTotals.expense),
+      value: formatCurrency(dashboardTotals.expense),
       helper: "Saídas reais no mês",
       icon: ArrowUpCircle,
       tone: "danger",

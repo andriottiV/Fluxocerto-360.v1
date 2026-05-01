@@ -267,7 +267,9 @@ export default function VoiceTransactionModal({
     const result = addTransaction({
       type: preview.type,
       amount: voiceAmount,
-      grossAmount: preview.type === TransactionType.INCOME ? voiceAmount : undefined,
+      grossAmount: voiceAmount,
+      feeAmount: preview.type === TransactionType.EXPENSE ? 0 : undefined,
+      netAmount: preview.type === TransactionType.EXPENSE ? voiceAmount : undefined,
       description: normalizedDescription || (preview.type === TransactionType.INCOME ? "Recebimento" : "Saída por voz"),
       category: preview.type === TransactionType.INCOME ? preview.category || "servico" : preview.category.trim() || "outros",
       date: preview.type === TransactionType.INCOME ? todayIso() : preview.date || todayIso(),

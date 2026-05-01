@@ -1,6 +1,6 @@
 # RELATÓRIO QA - FluxoCerto360
 
-Gerado em: 01/05/2026, 08:59:27
+Gerado em: 01/05/2026, 09:20:05
 Status geral: **APROVADO**
 
 ## Telas testadas
@@ -54,6 +54,7 @@ Status geral: **APROVADO**
 - **PASS** Entrada por voz reflete no dashboard: Voz usa o mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard foram atualizados.
 
 ## Checks de produto e navegação
+- **PASS** KPIs do dashboard usam transações oficiais: Entradas, saídas, lucro líquido e gráfico refletiram a lista oficial de transações.
 - **PASS** Sincronização por reload: Dados financeiros persistiram e foram recarregados na sessão simulada.
 - **PASS** Regra admin: Administração não apareceu para usuário comum.
 - **PASS** Consultor Flux: Uma pergunta gerou exatamente uma resposta do Flux, sem loop imediato.

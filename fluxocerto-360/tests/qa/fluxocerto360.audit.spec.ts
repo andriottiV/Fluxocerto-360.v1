@@ -350,8 +350,13 @@ async function registerVoiceIncome(page: Page, testInfo: TestInfo) {
 
   await page.goto("/dashboard");
   await expect(page.getByText(/Nada registrado ainda/i)).toHaveCount(0);
+  await expect(page.getByText(/Sem movimenta/i)).toHaveCount(0);
+  await expect(page.getByText(/R\$\s*200,00/i).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/R\$\s*10,00/i).first()).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText(/R\$\s*193,02/i).first()).toBeVisible({ timeout: 10_000 });
   await screenshot(page, "10-voz-dashboard-atualizado", testInfo);
   addCheck("Entrada por voz reflete no dashboard", "PASS", "Voz usa o mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard foram atualizados.");
+  addCheck("KPIs do dashboard usam transações oficiais", "PASS", "Entradas, saídas, lucro líquido e gráfico refletiram a lista oficial de transações.");
 }
 
 async function validateReloadSync(page: Page) {

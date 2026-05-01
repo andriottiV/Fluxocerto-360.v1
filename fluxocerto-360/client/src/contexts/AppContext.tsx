@@ -996,6 +996,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? normalizeNewIncomeAmounts(transactionInput, paymentFeeSettings)
         : null;
     const movementAmount = incomeAmounts?.netAmount ?? normalizedAmount;
+    const inputPot = transactionInput.potId ? pots.find((pot) => pot.id === transactionInput.potId) : undefined;
     const transaction: Transaction = {
       ...transactionInput,
       id: transactionInput.id ?? createId("tx"),
@@ -1008,6 +1009,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       origin: transactionInput.origin?.trim() || undefined,
       source: transactionInput.source?.trim() || undefined,
       sourceId: transactionInput.sourceId?.trim() || undefined,
+      pot: transactionInput.pot ?? inputPot?.type ?? undefined,
       notes: transactionInput.notes?.trim() || undefined,
       potDistribution:
         transactionInput.type === TransactionType.INCOME
@@ -1076,7 +1078,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     return { ok: true, data: transaction };
-  }, [paymentFeeSettings, potDistribution, user?.id]);
+  }, [paymentFeeSettings, potDistribution, pots, user?.id]);
 
   const updateAccountBalance = useCallback((accountId: string, balance: number) => {
     setAccounts((prev) => prev.map((account) => (account.id === accountId ? { ...account, balance } : account)));
