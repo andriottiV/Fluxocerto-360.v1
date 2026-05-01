@@ -432,11 +432,20 @@ export default function TransactionModal({
   };
 
   return (
-    <div className="fd-modal-backdrop" role="dialog" aria-modal="true">
+    <div
+      className="fd-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          closeModal();
+        }
+      }}
+    >
       <div className="fd-modal-card fd-transaction-flow">
         <div className="fd-modal-head">
           <h3>{type === TransactionType.INCOME ? "Nova entrada" : "Nova saida"}</h3>
-          <button type="button" className="fd-icon-btn" onClick={closeModal}>
+          <button type="button" className="fd-icon-btn" onClick={closeModal} aria-label="Fechar modal" title="Fechar">
             <X className="h-4 w-4" />
           </button>
         </div>

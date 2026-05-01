@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Check, SunMoon, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -105,6 +105,7 @@ export default function DashboardScreen() {
   const [readNotificationIds, setReadNotificationIds] = useState<Record<string, boolean>>(() =>
     readStoredNotificationIds(user?.id)
   );
+  const notificationRef = useRef<HTMLDivElement | null>(null);
   const [location, setLocation] = useLocation();
   const activePath = normalizeRoute(location);
   const isAdmin = canAccessAdmin(user);
@@ -128,6 +129,19 @@ export default function DashboardScreen() {
   useEffect(() => {
     setReadNotificationIds(readStoredNotificationIds(user?.id));
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!isNotificationOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!notificationRef.current?.contains(event.target as Node)) {
+        setIsNotificationOpen(false);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    return () => window.removeEventListener("pointerdown", handlePointerDown);
+  }, [isNotificationOpen]);
 
   const currentSection = ROUTE_META[activePath];
   const intelligence = useMemo(
@@ -185,7 +199,10 @@ export default function DashboardScreen() {
               className="fd-icon-btn fd-notif-btn"
               aria-label="Notificações"
               aria-expanded={isNotificationOpen}
-              onClick={() => setIsNotificationOpen((prev) => !prev)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setIsNotificationOpen((prev) => !prev);
+              }}
             >
               <Bell className="h-4 w-4" />
               {unreadNotifications.length > 0 ? (
@@ -197,7 +214,7 @@ export default function DashboardScreen() {
         />
 
         {isNotificationOpen ? (
-          <section className="fd-panel fd-glass fd-notification-panel">
+          <section ref={notificationRef} className="fd-panel fd-glass fd-notification-panel">
             <div className="fd-panel-head">
               <h2>Notificações inteligentes</h2>
               <p>Atualizadas com base nos seus dados reais.</p>

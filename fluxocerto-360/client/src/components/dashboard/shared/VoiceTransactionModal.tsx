@@ -302,7 +302,16 @@ export default function VoiceTransactionModal({
   };
 
   return (
-    <div className="fd-modal-backdrop" role="dialog" aria-modal="true">
+    <div
+      className="fd-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div className="fd-modal-card fd-voice-modal-card">
         <div className="fd-modal-head">
           <div className="fd-voice-head">
@@ -314,7 +323,7 @@ export default function VoiceTransactionModal({
               <p>Fale sua movimentação e confirme os dados antes de salvar.</p>
             </div>
           </div>
-          <button type="button" className="fd-icon-btn" onClick={onClose}>
+          <button type="button" className="fd-icon-btn" onClick={onClose} aria-label="Fechar registro por voz" title="Fechar">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -332,6 +341,7 @@ export default function VoiceTransactionModal({
               type="button"
               className="fd-mini-btn"
               onClick={() => (voiceListening ? stopVoice() : startVoice())}
+              aria-label={voiceListening ? "Parar escuta" : "Iniciar escuta"}
               title={voiceListening ? "Parar escuta" : "Iniciar escuta"}
             >
               {voiceListening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}

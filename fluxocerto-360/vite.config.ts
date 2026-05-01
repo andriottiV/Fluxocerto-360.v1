@@ -150,7 +150,113 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+function readJsonBody(req: import("node:http").IncomingMessage): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      if (!body.trim()) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(body));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res: import("node:http").ServerResponse, statusCode: number, payload: unknown) {
+  res.writeHead(statusCode, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(payload));
+}
+
+function vitePluginFluxLocalApi(): Plugin {
+  return {
+    name: "flux-local-api-fallback",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/flux-ai", async (req, res, next) => {
+        if (req.method !== "POST") {
+          return next();
+        }
+
+        try {
+          const payload = await readJsonBody(req);
+          const context = payload?.context ?? {};
+          const answer =
+            typeof context.respostaLocalBase === "string" && context.respostaLocalBase.trim()
+              ? context.respostaLocalBase.trim()
+              : "Flux está no modo local agora. Ainda consigo te orientar com seus dados.";
+          const suggestedAction =
+            typeof context.acaoLocalBase === "string" && context.acaoLocalBase.trim()
+              ? context.acaoLocalBase.trim()
+              : "Registre seus dados reais para melhorar a análise.";
+
+          sendJson(res, 200, {
+            answer,
+            severity: "attention",
+            suggestedAction,
+            source: "local-vite-fallback",
+          });
+        } catch {
+          sendJson(res, 400, {
+            answer: "Não consegui ler a pergunta agora.",
+            severity: "attention",
+            suggestedAction: "Tente enviar a pergunta novamente.",
+            source: "local-vite-fallback",
+          });
+        }
+      });
+
+      server.middlewares.use("/api/flux-agent", async (req, res, next) => {
+        if (req.method !== "POST") {
+          return next();
+        }
+
+        try {
+          const payload = await readJsonBody(req);
+          const responseText = "Flux está no modo local agora. Ainda consigo te orientar com seus dados.";
+
+          sendJson(res, 200, {
+            success: true,
+            message: responseText,
+            responseText,
+            riskLevel: "warning",
+            suggestedActions: ["Registre seus dados reais para melhorar a análise."],
+            updatedConversationState: payload?.conversationState ?? {},
+            pendingAction: null,
+            source: "local-vite-fallback",
+          });
+        } catch {
+          sendJson(res, 400, {
+            success: false,
+            message: "Payload inválido",
+            responseText: "Não consegui ler a pergunta agora.",
+            riskLevel: "warning",
+            suggestedActions: ["Tente enviar a pergunta novamente."],
+            updatedConversationState: {},
+            pendingAction: null,
+            source: "local-vite-fallback",
+          });
+        }
+      });
+    },
+  };
+}
+
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+  vitePluginFluxLocalApi(),
+];
 
 export default defineConfig({
   plugins,

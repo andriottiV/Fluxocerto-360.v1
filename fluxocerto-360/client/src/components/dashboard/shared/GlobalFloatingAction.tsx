@@ -96,6 +96,17 @@ export default function GlobalFloatingAction() {
     setIsVoiceModalOpen(true);
   };
 
+  const voiceLabel =
+    voiceFabState === "listening"
+      ? "Ouvindo"
+      : voiceFabState === "processing"
+        ? "Processando"
+        : voiceFabState === "error"
+          ? "Tentar voz"
+          : voiceFabState === "ready_for_confirmation"
+            ? "Revisar voz"
+            : "Registrar por voz";
+
   return (
     <>
       <div className="fd-fab-wrap">
@@ -116,10 +127,11 @@ export default function GlobalFloatingAction() {
           type="button"
           className={`fd-fab-secondary ${voiceFabState}`}
           onClick={handleVoiceClick}
-          aria-label="Registrar por voz"
-          title="Registrar por voz"
+          aria-label={voiceLabel}
+          title={voiceLabel}
         >
           <Mic className="h-5 w-5" />
+          <span className="fd-voice-fab-label">Voz</span>
         </button>
 
         <button

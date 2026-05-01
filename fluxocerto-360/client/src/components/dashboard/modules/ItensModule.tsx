@@ -651,7 +651,13 @@ export default function ItensModule() {
             value={supplyForm.date}
             onChange={(event) => setSupplyForm((prev) => ({ ...prev, date: event.target.value }))}
           />
-          <button className="fd-mini-btn fd-items-add-btn" type="button" onClick={addSupply}>
+          <button
+            className="fd-mini-btn fd-items-add-btn"
+            type="button"
+            onClick={addSupply}
+            aria-label="Adicionar insumo"
+            title="Adicionar insumo"
+          >
             <Plus className="h-4 w-4" />
           </button>
         </div>
@@ -729,7 +735,13 @@ export default function ItensModule() {
               onChange={(event) => setLinkForm((prev) => ({ ...prev, unitsPerService: event.target.value }))}
               placeholder="Qtd por serviço"
             />
-            <button className="fd-mini-btn fd-items-add-btn" type="button" onClick={linkSupplyToService}>
+            <button
+              className="fd-mini-btn fd-items-add-btn"
+              type="button"
+              onClick={linkSupplyToService}
+              aria-label="Vincular insumo ao serviço"
+              title="Vincular insumo ao serviço"
+            >
               <Plus className="h-4 w-4" />
             </button>
           </div>
@@ -866,7 +878,13 @@ export default function ItensModule() {
             value={productForm.date}
             onChange={(event) => setProductForm((prev) => ({ ...prev, date: event.target.value }))}
           />
-          <button className="fd-mini-btn fd-items-add-btn" type="button" onClick={addProduct}>
+          <button
+            className="fd-mini-btn fd-items-add-btn"
+            type="button"
+            onClick={addProduct}
+            aria-label="Adicionar item para vender"
+            title="Adicionar item para vender"
+          >
             <Plus className="h-4 w-4" />
           </button>
         </div>
@@ -908,11 +926,23 @@ export default function ItensModule() {
                   </div>
 
                   <div className="fd-stock-actions">
-                    <button type="button" className="fd-mini-btn" onClick={() => registerSale(item)}>
+                    <button
+                      type="button"
+                      className="fd-mini-btn"
+                      onClick={() => registerSale(item)}
+                      aria-label={`Registrar venda de ${item.name}`}
+                      title={`Registrar venda de ${item.name}`}
+                    >
                       <ShoppingBag className="h-4 w-4" />
                     </button>
                     {item.type === "consignado" ? (
-                      <button type="button" className="fd-mini-btn" onClick={() => settleConsignadoDebt(item)}>
+                      <button
+                        type="button"
+                        className="fd-mini-btn"
+                        onClick={() => settleConsignadoDebt(item)}
+                        aria-label={`Quitar repasse de ${item.name}`}
+                        title={`Quitar repasse de ${item.name}`}
+                      >
                         <Wallet className="h-4 w-4" />
                       </button>
                     ) : null}
@@ -1057,7 +1087,13 @@ export default function ItensModule() {
             value={costForm.date}
             onChange={(event) => setCostForm((prev) => ({ ...prev, date: event.target.value }))}
           />
-          <button className="fd-mini-btn fd-items-add-btn" type="button" onClick={addExternalCost}>
+          <button
+            className="fd-mini-btn fd-items-add-btn"
+            type="button"
+            onClick={addExternalCost}
+            aria-label="Adicionar custo do trabalho"
+            title="Adicionar custo do trabalho"
+          >
             <Plus className="h-4 w-4" />
           </button>
         </div>
