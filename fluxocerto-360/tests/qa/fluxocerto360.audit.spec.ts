@@ -2,6 +2,8 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
+import { getPersonalFreeMoney } from "../../client/src/lib/personalFreeMoney";
+
 type Severity = "P0" | "P1" | "P2" | "INFO";
 
 type QaIssue = {
@@ -41,6 +43,7 @@ type StoredPot = {
 type StoredAppData = {
   transactions?: StoredTransaction[];
   pots?: StoredPot[];
+  adjustmentAccounts?: Array<{ pot?: string; status?: string; amount?: number; value?: number }>;
   paymentFeeSettings?: Array<{ method: string; enabled: boolean; feePercent: number }>;
 };
 
@@ -156,6 +159,32 @@ async function readStoredData(page: Page): Promise<{ userId: string; appData: St
 
 function approx(actual: number, expected: number, tolerance = 0.03) {
   return Math.abs(actual - expected) <= tolerance;
+}
+
+function validatePersonalFreeMoneyFormula() {
+  const pots = [
+    { id: "pessoal", type: "pessoal", name: "Pessoal", balance: 100 },
+    { id: "negocio", type: "negocio", name: "Negócio", balance: 500 },
+    { id: "reserva", type: "reserva", name: "Reserva", balance: 200 },
+  ];
+  const withCommitment = getPersonalFreeMoney(pots, [{ pot: "pessoal", status: "pendente", amount: 30 }]);
+  const withoutCommitment = getPersonalFreeMoney(pots, []);
+
+  if (!approx(withCommitment, 70, 0.001)) {
+    addIssue("P0", "Dashboard", `Dinheiro livre somou pote indevido ou ignorou compromisso pessoal. Esperado R$70, veio ${formatMoney(withCommitment)}.`);
+    return;
+  }
+
+  if (!approx(withoutCommitment, 100, 0.001)) {
+    addIssue("P0", "Dashboard", `Dinheiro livre sem compromisso deve ser só o pote Pessoal. Esperado R$100, veio ${formatMoney(withoutCommitment)}.`);
+    return;
+  }
+
+  addCheck(
+    "Fórmula dinheiro livre pessoal",
+    "PASS",
+    "Pessoal=100, Negócio=500, Reserva=200 e compromisso pessoal=30 resultou em R$70; sem compromisso resultou em R$100."
+  );
 }
 
 async function waitForStoredTransactions(page: Page, count: number) {
@@ -329,6 +358,9 @@ async function registerVoiceIncome(page: Page, testInfo: TestInfo) {
     (tx) => tx.type === "entrada" && tx.source === "voice" && Number(tx.grossAmount ?? tx.amount) === 100
   );
   const totalPots = (appData.pots ?? []).reduce((sum, pot) => sum + Number(pot.balance ?? 0), 0);
+  const personalPot = (appData.pots ?? []).find((pot) => pot.type === "pessoal");
+  const businessPot = (appData.pots ?? []).find((pot) => pot.type === "negocio");
+  const reservePot = (appData.pots ?? []).find((pot) => pot.type === "reserva");
 
   if (!voiceIncome) {
     addIssue("P0", "Voz", "Entrada por voz não entrou no array principal de transações.");
@@ -354,9 +386,21 @@ async function registerVoiceIncome(page: Page, testInfo: TestInfo) {
   await expect(page.getByText(/R\$\s*200,00/i).first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(/R\$\s*10,00/i).first()).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(/R\$\s*193,02/i).first()).toBeVisible({ timeout: 10_000 });
+  const expectedPersonalFree = getPersonalFreeMoney(appData.pots ?? [], appData.adjustmentAccounts ?? []);
+  const personalFreeCandidates = [expectedPersonalFree - 0.01, expectedPersonalFree, expectedPersonalFree + 0.01]
+    .map((value) => value.toFixed(2).replace(".", "[,.]"))
+    .join("|");
+  await expect(page.getByText(new RegExp(`R\\$\\s*(?:${personalFreeCandidates})`)).first()).toBeVisible({ timeout: 10_000 });
+  if (approx(Number(personalPot?.balance ?? 0), totalPots, 0.08)) {
+    addIssue("P0", "Dashboard", "Teste não conseguiu diferenciar dinheiro livre do total dos potes.");
+  }
+  if (approx(Number(businessPot?.balance ?? 0) + Number(reservePot?.balance ?? 0), 0, 0.08)) {
+    addIssue("P0", "Dashboard", "Teste sem saldo em Negócio/Reserva não valida exclusão desses potes do dinheiro livre.");
+  }
   await screenshot(page, "10-voz-dashboard-atualizado", testInfo);
   addCheck("Entrada por voz reflete no dashboard", "PASS", "Voz usa o mesmo motor da entrada manual: bruto, taxa, líquido, potes e dashboard foram atualizados.");
   addCheck("KPIs do dashboard usam transações oficiais", "PASS", "Entradas, saídas, lucro líquido e gráfico refletiram a lista oficial de transações.");
+  addCheck("Dinheiro livre usa só pote Pessoal", "PASS", "Dinheiro livre não somou Negócio nem Reserva.");
 }
 
 async function validateReloadSync(page: Page) {
@@ -605,6 +649,8 @@ test.afterAll(() => {
 });
 
 test("auditoria completa do FluxoCerto360", async ({ page }, testInfo) => {
+  validatePersonalFreeMoneyFormula();
+
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => {
     pageErrors.push(error.message);

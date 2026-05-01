@@ -27,6 +27,7 @@ import {
 import { generateProactiveInsights } from "@/lib/consultorInsights";
 import { PotType, TransactionType, type Transaction } from "@/lib/types";
 import type { DashboardIntelligence } from "@/lib/dashboardIntelligence";
+import { getPersonalFreeMoneyDetails } from "@/lib/personalFreeMoney";
 import { formatCurrency } from "@/lib/utils";
 
 type InicioModuleProps = {
@@ -124,6 +125,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     clients,
     salesItems,
     costs,
+    adjustmentAccounts,
   } = useApp();
   const [, setLocation] = useLocation();
 
@@ -164,11 +166,14 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     () => buildRealPotBalances(realTransactions, pots, potDistribution),
     [potDistribution, pots, realTransactions]
   );
+  const personalFreeMoneyDetails = useMemo(
+    () => getPersonalFreeMoneyDetails(pots, adjustmentAccounts),
+    [adjustmentAccounts, pots]
+  );
   const metaMensal = Number(onboardingData.metaMensal ?? 0);
   const lucroLiquido = hasRealIncome ? Number((dashboardTotals.income - dashboardTotals.fees - dashboardCosts).toFixed(2)) : 0;
-  const dinheiroLivre = hasRealIncome
-    ? Number(Math.max(0, realPotBalances.personal + realPotBalances.business - fixedCommitments).toFixed(2))
-    : 0;
+  const personalFreeMoney = personalFreeMoneyDetails.personalFreeMoney;
+  const hasPersonalDeficit = personalFreeMoneyDetails.deficit > 0;
 
   const proactiveInsights = useMemo(
     () =>
@@ -340,8 +345,9 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       lastTransaction: realTransactions[realTransactions.length - 1],
       totals: dashboardTotals,
       realPotBalances,
+      personalFreeMoneyDetails,
     });
-  }, [dashboardTotals, dashboardTransactions.length, realPotBalances, realTransactions]);
+  }, [dashboardTotals, dashboardTransactions.length, personalFreeMoneyDetails, realPotBalances, realTransactions]);
 
   const summaryCards = [
     {
@@ -367,10 +373,12 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     },
     {
       label: "Dinheiro livre",
-      value: formatCurrency(dinheiroLivre),
-      helper: hasRealIncome
-        ? "Valor seguro para usar sem comprometer sua meta."
-        : "Registre entradas reais para calcular seu dinheiro livre.",
+      value: formatCurrency(personalFreeMoney),
+      helper: hasPersonalDeficit
+        ? "Compromissos pessoais passam do saldo pessoal."
+        : personalFreeMoneyDetails.personalBalance > 0
+          ? "Valor pessoal seguro para usar sem comprometer contas."
+          : "Saldo pessoal ainda zerado.",
       icon: WalletCards,
       tone: "info",
     },
