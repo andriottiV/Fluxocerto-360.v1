@@ -36,7 +36,7 @@ export async function analyzeFinancialAdvisorWithAI(
     return {
       source: "local-fallback",
       data: localFallback,
-      error: "API externa nao configurada. Fallback local ativo.",
+      error: "API externa não configurada. Fallback local ativo.",
     };
   }
 
@@ -54,7 +54,7 @@ export async function analyzeFinancialAdvisorWithAI(
   try {
     /**
      * Seguranca:
-     * - nao enviamos chave secreta do provider no front.
+     * - não enviamos chave secreta do provider no front.
      * - esperado uso de endpoint proxy/backend proprio (VITE_AI_ADVISOR_API_URL).
      */
     const response = await fetch(merged.apiUrl, {

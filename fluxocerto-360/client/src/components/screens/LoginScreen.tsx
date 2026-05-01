@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
+import BrandLogo from "@/components/ui/BrandLogo";
 import { ScreenType, User } from "@/lib/types";
 import { isValidEmail, isValidPassword } from "@/lib/utils";
-import { authenticateUser, createAccount, requestPasswordReset } from "@/lib/auth";
+import { AuthService, requestPasswordReset } from "@/lib/auth";
 
 type AuthMode = "login" | "register" | "recover";
 
@@ -77,7 +78,7 @@ export default function LoginScreen() {
       }
 
       if (mode === "register") {
-        const created = createAccount({ name, email, password });
+        const created = await AuthService.register({ name, email, password });
         if (!created.ok || !created.user) {
           setError(created.error ?? "Não foi possível criar a conta");
           return;
@@ -87,7 +88,7 @@ export default function LoginScreen() {
         return;
       }
 
-      const authenticated = authenticateUser(email, password);
+      const authenticated = await AuthService.login(email, password);
       if (!authenticated.ok || !authenticated.user) {
         setError(authenticated.error ?? "Email ou senha incorretos");
         return;
@@ -123,9 +124,8 @@ export default function LoginScreen() {
       <main className="relative z-10 grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(440px,560px)]">
         <section className="hidden min-h-screen flex-col justify-between border-r border-emerald-300/10 px-10 py-10 lg:flex xl:px-16">
           <div>
-            <img
-              src="/logo-full.png"
-              alt="FluxoCerto 360"
+            <BrandLogo
+              variant="full"
               className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(34,197,94,0.14)]"
             />
           </div>
@@ -164,7 +164,7 @@ export default function LoginScreen() {
         <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-10">
           <div className="w-full max-w-[460px]">
             <div className="mb-7 flex justify-center lg:hidden">
-              <img src="/logo-full.png" alt="FluxoCerto 360" className="h-11 w-auto object-contain" />
+              <BrandLogo variant="full" className="h-11 w-auto object-contain" />
             </div>
 
             <div className="rounded-[28px] border border-emerald-300/14 bg-[#05110e]/76 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.44),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl sm:p-8">
@@ -334,3 +334,4 @@ function Field({
     </div>
   );
 }
+

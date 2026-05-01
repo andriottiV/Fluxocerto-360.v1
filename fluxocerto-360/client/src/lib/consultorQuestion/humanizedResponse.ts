@@ -108,7 +108,7 @@ export function generateResponseVariation(params: {
 
   const introsByTone: Record<FluxTone, string[]> = {
     safe: [
-      "Dá para respirar. Seu caixa nao esta no aperto agora.",
+      "Dá para respirar. Seu caixa não está no aperto agora.",
       "Seu momento esta mais estavel. Boa noticia.",
       "Hoje o cenario esta controlado, sem susto imediato.",
     ],
@@ -119,18 +119,18 @@ export function generateResponseVariation(params: {
     ],
     critical: [
       "Vou ser direto: aqui tem risco real.",
-      "Alerta importante. Se nao agir agora, aperta.",
-      "Esse cenario pede decisao hoje, sem adiar.",
+      "Alerta importante. Se não agir agora, aperta.",
+      "Esse cenário pede decisão hoje, sem adiar.",
     ],
     growth: [
       "Boa pergunta. Aqui o foco e crescer com margem.",
-      "Crescer da, mas com estrategia, nao no volume cego.",
+      "Crescer dá, mas com estratégia, não no volume cego.",
       "Para ganhar mais, vamos atacar alavanca certa.",
     ],
     emotional: [
       "Eu entendo a pressao. Quem trabalha por conta sente isso na pele.",
-      "Respira. Voce nao esta sozinho nisso.",
-      "Faz sentido voce estar preocupado. Vamos organizar com calma.",
+      "Respira. Você não está sozinho nisso.",
+      "Faz sentido você estar preocupado. Vamos organizar com calma.",
     ],
     educational: [
       "Vamos simplificar isso.",
@@ -202,7 +202,7 @@ export function generateHumanizedResponse(data: HumanizedResponseData) {
     scenarioReading: data.scenarioReading,
     practicalGuidance: data.practicalGuidance,
     clearLimit: data.clearLimit,
-    reason: "voce decide melhor quando protege caixa e margem ao mesmo tempo",
+    reason: "você decide melhor quando protege caixa e margem ao mesmo tempo",
     nextAction: data.conversationClosing,
   });
 }

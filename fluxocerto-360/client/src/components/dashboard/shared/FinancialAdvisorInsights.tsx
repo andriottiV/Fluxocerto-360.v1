@@ -103,7 +103,7 @@ export default function FinancialAdvisorInsights({
       },
       {
         id: "investment-guidance",
-        title: "Investir agora ou nao",
+        title: "Investir agora ou não",
         explanation: snapshot.investmentReadiness.reason,
         action: advisorResult.proximoPassoRecomendado,
         tone: snapshot.investmentReadiness.level === "ready" ? "positive" : "attention",

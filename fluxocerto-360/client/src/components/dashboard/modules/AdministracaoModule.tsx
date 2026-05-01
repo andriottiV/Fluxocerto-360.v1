@@ -29,7 +29,7 @@ function statusLabel(status: User["status"]) {
   return "Pendente";
 }
 
-export default function AdministracaoModule() {
+export default function AdministraçãoModule() {
   const { user } = useApp();
   const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState("");
@@ -73,7 +73,7 @@ export default function AdministracaoModule() {
     if (!user) return;
     const result = updateUserStatus(user, targetId, status);
     if (!result.ok) {
-      window.alert(result.error ?? "Nao foi possivel atualizar o status.");
+      window.alert(result.error ?? "Não foi possível atualizar o status.");
       return;
     }
     setRefreshKey((prev) => prev + 1);
@@ -84,18 +84,18 @@ export default function AdministracaoModule() {
       <article className="fd-panel fd-glass">
         <div className="fd-panel-head fd-admin-head">
           <div>
-            <h2>Administracao</h2>
-            <p>Controle de acesso do beta fechado com aprovacao manual de testadores.</p>
+            <h2>Administração</h2>
+            <p>Controle de acesso do beta fechado com aprovação manual de testadores.</p>
           </div>
         </div>
         <p className="text-xs text-[rgba(230,255,247,0.7)]">
-          Admins autorizados por variavel de ambiente: {getConfiguredAdminEmails().join(", ")}
+          Admins autorizados por variável de ambiente: {getConfiguredAdminEmails().join(", ")}
         </p>
       </article>
 
       <section className="fd-admin-stats-grid">
         <article className="fd-summary-v2-card">
-          <p>Total de usuarios</p>
+          <p>Total de usuários</p>
           <h3>{stats.total}</h3>
           <span>Base geral cadastrada</span>
         </article>
@@ -107,7 +107,7 @@ export default function AdministracaoModule() {
         <article className="fd-summary-v2-card">
           <p>Pendentes</p>
           <h3>{stats.pending}</h3>
-          <span>Aguardando aprovacao</span>
+          <span>Aguardando aprovação</span>
         </article>
         <article className="fd-summary-v2-card success">
           <p>Ativos</p>
@@ -136,7 +136,7 @@ export default function AdministracaoModule() {
       <article className="fd-panel fd-glass">
         <div className="fd-panel-head">
           <h2>Usuarios</h2>
-          <p>{filteredUsers.length} usuario(s)</p>
+          <p>{filteredUsers.length} usuário(s)</p>
         </div>
 
         <div className="fd-table-wrap">
@@ -148,8 +148,8 @@ export default function AdministracaoModule() {
                 <th>Role</th>
                 <th>Status</th>
                 <th>Cadastro</th>
-                <th>Ultimo acesso</th>
-                <th>Acoes</th>
+                <th>Último acesso</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>

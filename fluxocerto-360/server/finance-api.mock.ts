@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 
+// Mock/demo finance API. Do not use as a production data source.
+// In production this router returns 410 before creating any in-memory demo data.
+const isProduction = process.env.NODE_ENV === "production";
+
 type AccountTypeLink = "pf" | "pj";
 type PotScope = "pessoal" | "negocio" | "reserva";
 type TransactionKind = "entrada" | "saida";
@@ -85,15 +89,17 @@ type InMemoryDb = {
 
 const now = () => new Date().toISOString();
 
-const db: InMemoryDb = {
-  pots: [
-    { id: "pot-001", name: "Pessoal", scope: "pessoal", balance: 2500, goal: 5000, createdAt: now(), updatedAt: now() },
-    { id: "pot-002", name: "Negocio", scope: "negocio", balance: 4500, goal: 10000, createdAt: now(), updatedAt: now() },
-    { id: "pot-003", name: "Reserva", scope: "reserva", balance: 3200, goal: 8000, createdAt: now(), updatedAt: now() },
-  ],
-  transactions: [],
-  fixedExpenses: [],
-};
+function createDemoDb(): InMemoryDb {
+  return {
+    pots: [
+      { id: "pot-001", name: "Pessoal", scope: "pessoal", balance: 2500, goal: 5000, createdAt: now(), updatedAt: now() },
+      { id: "pot-002", name: "Negócio", scope: "negocio", balance: 4500, goal: 10000, createdAt: now(), updatedAt: now() },
+      { id: "pot-003", name: "Reserva", scope: "reserva", balance: 3200, goal: 8000, createdAt: now(), updatedAt: now() },
+    ],
+    transactions: [],
+    fixedExpenses: [],
+  };
+}
 
 function jsonError(res: Response, status: number, message: string) {
   return res.status(status).json({ success: false, message });
@@ -115,21 +121,21 @@ function sameDay(dateIso: string, target: Date): boolean {
 function validatePotByRule(pot: Pot, accountTypeLink: AccountTypeLink): string | null {
   const expected = expectedPotScope(accountTypeLink);
   if (pot.scope !== expected) {
-    return `Regra de negocio: ${accountTypeLink.toUpperCase()} so pode movimentar pote '${expected}'.`;
+    return `Regra de negócio: ${accountTypeLink.toUpperCase()} só pode movimentar pote '${expected}'.`;
   }
   return null;
 }
 
-function postTransaction(type: TransactionKind, req: Request, res: Response) {
+function postTransaction(db: InMemoryDb, type: TransactionKind, req: Request, res: Response) {
   const parsed = transactionSchema.safeParse(req.body);
   if (!parsed.success) {
-    return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload invalido.");
+    return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload inválido.");
   }
 
   const payload = parsed.data;
   const pot = db.pots.find((entry) => entry.id === payload.potId);
   if (!pot) {
-    return jsonError(res, 404, "pot_id nao encontrado.");
+    return jsonError(res, 404, "pot_id não encontrado.");
   }
 
   const businessRuleError = validatePotByRule(pot, payload.accountTypeLink);
@@ -166,8 +172,20 @@ function postTransaction(type: TransactionKind, req: Request, res: Response) {
   });
 }
 
-export function createFinanceRouter() {
+export function createFinanceMockRouter() {
   const router = Router();
+
+  if (isProduction) {
+    router.use((_req, res) =>
+      res.status(410).json({
+        success: false,
+        message: "API financeira mock desativada em produção.",
+      })
+    );
+    return router;
+  }
+
+  const db = createDemoDb();
 
   router.get("/schema/proposal", (_req, res) => {
     return res.json({
@@ -175,9 +193,9 @@ export function createFinanceRouter() {
       data: {
         analysis: [
           "Schema original era apenas de UI/estado local, sem entidades persistentes no backend.",
-          "Refatoracao introduz separacao clara entre potes, transacoes e gastos fixos.",
+          "Refatoração introduz separação clara entre potes, transações e gastos fixos.",
           "Regras de integridade aplicadas no endpoint: PF->pessoal e PJ->negocio.",
-          "Validacao de pot_id e account_type_link em todas as entradas/saidas.",
+          "Validação de pot_id e account_type_link em todas as entradas/saídas.",
         ],
         tables: {
           pots: ["id", "name", "scope", "balance", "goal", "created_at", "updated_at"],
@@ -203,8 +221,8 @@ export function createFinanceRouter() {
     return res.json({ success: true, data: db.transactions });
   });
 
-  router.post("/transactions/income", (req, res) => postTransaction("entrada", req, res));
-  router.post("/transactions/expense", (req, res) => postTransaction("saida", req, res));
+  router.post("/transactions/income", (req, res) => postTransaction(db, "entrada", req, res));
+  router.post("/transactions/expense", (req, res) => postTransaction(db, "saida", req, res));
 
   router.get("/pots", (_req, res) => {
     return res.json({ success: true, data: db.pots });
@@ -213,7 +231,7 @@ export function createFinanceRouter() {
   router.post("/pots", (req, res) => {
     const parsed = createPotSchema.safeParse(req.body);
     if (!parsed.success) {
-      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload invalido.");
+      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload inválido.");
     }
 
     const created: Pot = {
@@ -230,12 +248,12 @@ export function createFinanceRouter() {
   router.patch("/pots/:id/goal", (req, res) => {
     const parsed = updatePotGoalSchema.safeParse(req.body);
     if (!parsed.success) {
-      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload invalido.");
+      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload inválido.");
     }
 
     const pot = db.pots.find((entry) => entry.id === req.params.id);
     if (!pot) {
-      return jsonError(res, 404, "Pote nao encontrado.");
+      return jsonError(res, 404, "Pote não encontrado.");
     }
 
     pot.goal = parsed.data.goal;
@@ -246,7 +264,7 @@ export function createFinanceRouter() {
   router.get("/pots/:id/balance", (req, res) => {
     const pot = db.pots.find((entry) => entry.id === req.params.id);
     if (!pot) {
-      return jsonError(res, 404, "Pote nao encontrado.");
+      return jsonError(res, 404, "Pote não encontrado.");
     }
     return res.json({ success: true, data: { potId: pot.id, balance: pot.balance } });
   });
@@ -258,7 +276,7 @@ export function createFinanceRouter() {
   router.post("/fixed-expenses", (req, res) => {
     const parsed = createFixedExpenseSchema.safeParse(req.body);
     if (!parsed.success) {
-      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload invalido.");
+      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload inválido.");
     }
 
     const created: FixedExpense = {
@@ -275,12 +293,12 @@ export function createFinanceRouter() {
   router.put("/fixed-expenses/:id", (req, res) => {
     const parsed = updateFixedExpenseSchema.safeParse(req.body);
     if (!parsed.success) {
-      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload invalido.");
+      return jsonError(res, 400, parsed.error.issues[0]?.message ?? "Payload inválido.");
     }
 
     const item = db.fixedExpenses.find((entry) => entry.id === req.params.id);
     if (!item) {
-      return jsonError(res, 404, "Conta/gasto fixo nao encontrado.");
+      return jsonError(res, 404, "Conta/gasto fixo não encontrado.");
     }
 
     Object.assign(item, parsed.data, { updatedAt: now() });
@@ -290,7 +308,7 @@ export function createFinanceRouter() {
   router.delete("/fixed-expenses/:id", (req, res) => {
     const index = db.fixedExpenses.findIndex((entry) => entry.id === req.params.id);
     if (index < 0) {
-      return jsonError(res, 404, "Conta/gasto fixo nao encontrado.");
+      return jsonError(res, 404, "Conta/gasto fixo não encontrado.");
     }
     const [removed] = db.fixedExpenses.splice(index, 1);
     return res.json({ success: true, data: removed });

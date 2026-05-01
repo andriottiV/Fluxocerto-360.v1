@@ -20,7 +20,7 @@ export function buildAIAdvisorPrompt(params: {
   const { context, baseline } = params;
 
   return [
-    "Voce e um consultor financeiro de um app SaaS.",
+    "Você é um consultor financeiro de um app SaaS.",
     "Retorne exclusivamente JSON valido com os campos:",
     "diagnostico, riscoPrincipal, acaoImediata, metaDaSemana, proximoPassoRecomendado, insights.",
     "Cada insight deve ter: id, title, description, impact, action.",

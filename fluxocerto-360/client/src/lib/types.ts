@@ -131,6 +131,8 @@ export interface Transaction {
   category: string;
   account: string;
   origin?: string;
+  source?: string;
+  sourceId?: string;
   notes?: string;
   pot?: string;
   potId?: string;
@@ -210,6 +212,37 @@ export interface Cost {
   category: string;
   date: string;
   status: "pago" | "pendente";
+}
+
+export interface SupplyItem {
+  id: string;
+  ownerId?: string;
+  name: string;
+  totalValue: number;
+  quantity: number;
+  unitValue: number;
+  date: string;
+}
+
+export type ProductType = "pago" | "consignado";
+
+export interface ProductItem {
+  id: string;
+  ownerId?: string;
+  name: string;
+  costPrice: number;
+  salePrice: number;
+  type: ProductType;
+  date: string;
+  soldCount: number;
+}
+
+export interface ServiceSupplyLink {
+  id: string;
+  ownerId?: string;
+  serviceId: string;
+  supplyId: string;
+  unitsPerService: number;
 }
 
 export type PaymentFeeMethod = PaymentMethod;
@@ -302,6 +335,9 @@ export interface AppContextType {
   achievements: Achievement[];
   salesItems: SalesItem[];
   costs: Cost[];
+  supplies: SupplyItem[];
+  products: ProductItem[];
+  serviceSupplyLinks: ServiceSupplyLink[];
   paymentFeeSettings: PaymentFeeSetting[];
   adjustmentAccounts: AdjustmentAccount[];
   potDistribution: PotDistribution;
@@ -315,6 +351,9 @@ export interface AppContextType {
   deleteService: (serviceId: string) => void;
   addCost: (cost: Omit<Cost, "id"> & { id?: string }) => { ok: boolean; error?: string; data?: Cost };
   deleteCost: (costId: string) => void;
+  setSupplies: React.Dispatch<React.SetStateAction<SupplyItem[]>>;
+  setProducts: React.Dispatch<React.SetStateAction<ProductItem[]>>;
+  setServiceSupplyLinks: React.Dispatch<React.SetStateAction<ServiceSupplyLink[]>>;
   setPaymentFeeSettings: (settings: PaymentFeeSetting[]) => void;
   setPotDistribution: (distribution: PotDistribution) => void;
   applyOnboardingUsageMode: (usageMode: OnboardingUsageMode) => void;

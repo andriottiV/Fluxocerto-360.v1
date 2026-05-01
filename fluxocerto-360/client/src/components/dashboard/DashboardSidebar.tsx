@@ -1,5 +1,6 @@
 import { LogOut } from "lucide-react";
 
+import BrandLogo from "@/components/ui/BrandLogo";
 import { SIDEBAR_ITEMS, type DashboardRoutePath } from "./sidebarConfig";
 
 type DashboardSidebarProps = {
@@ -20,21 +21,16 @@ export default function DashboardSidebar({
   return (
     <aside className="fd-sidebar">
       <div className="fd-sidebar-brand" aria-label="FluxoCerto 360">
-        <img
-          src="/logo-full.png"
-          alt="FluxoCerto 360"
+        <BrandLogo
+          variant="full"
           className="fd-sidebar-logo-full"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
+          fallbackClassName="fd-sidebar-logo-full"
         />
-        <img
-          src="/icon.png"
+        <BrandLogo
+          variant="icon"
           alt="FluxoCerto"
           className="fd-sidebar-logo-icon"
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
+          fallbackClassName="fd-sidebar-logo-icon"
         />
       </div>
 
@@ -73,3 +69,4 @@ export default function DashboardSidebar({
     </aside>
   );
 }
+

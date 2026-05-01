@@ -163,9 +163,35 @@ export default defineConfig({
   },
   envDir: path.resolve(import.meta.dirname),
   root: path.resolve(import.meta.dirname, "client"),
+  publicDir: "public",
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+            return "react";
+          }
+
+          if (/[\\/]node_modules[\\/](recharts|d3-|victory|chart\.js)[\\/]/.test(id)) {
+            return "charts";
+          }
+
+          if (/[\\/]node_modules[\\/](@radix-ui|lucide-react|framer-motion)[\\/]/.test(id)) {
+            return "ui-vendor";
+          }
+
+          if (/[\\/]node_modules[\\/](wouter|zod|axios|date-fns|clsx|class-variance-authority|tailwind-merge)[\\/]/.test(id)) {
+            return "vendor";
+          }
+
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     port: 3000,

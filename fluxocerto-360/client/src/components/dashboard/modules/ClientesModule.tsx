@@ -1,5 +1,17 @@
-import { useMemo, useState } from "react";
-import { MessageCircle, Search, UsersRound } from "lucide-react";
+﻿import { useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
+  Clock3,
+  DollarSign,
+  MessageCircle,
+  Plus,
+  Search,
+  Sparkles,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
 import {
@@ -19,11 +31,14 @@ import {
 import { formatDate, formatPhone } from "@/lib/utils";
 
 type FilterKey = "todos" | "vip" | "fiel" | "recorrente" | "novo" | "inativo" | "pendentes";
+type FunnelStage = "novo" | "proposta" | "falar" | "fechado";
 
 type ClientCRMRow = {
   id: string;
   name: string;
+  email: string;
   phone: string;
+  lastService?: string;
   level: ClientEngagementLevel;
   status: "ativo" | "inativo";
   totalRevenue: number;
@@ -53,6 +68,13 @@ const FILTER_LABELS: Array<{ id: FilterKey; label: string }> = [
   { id: "novo", label: "Novo" },
   { id: "inativo", label: "Inativo" },
   { id: "pendentes", label: "Pendentes" },
+];
+
+const FUNNEL_COLUMNS: Array<{ id: FunnelStage; title: string; helper: string }> = [
+  { id: "novo", title: "Novo contato", helper: "Chegou agora" },
+  { id: "proposta", title: "Proposta enviada", helper: "Tem valor para receber" },
+  { id: "falar", title: "Falar depois", helper: "Precisa de resposta" },
+  { id: "fechado", title: "Fechado", helper: "Ja virou dinheiro" },
 ];
 
 function normalizeText(value: string) {
@@ -102,12 +124,88 @@ function buildNextForecast(lastVisitDate: string | null, avgInterval: number | n
   return forecast.toISOString().slice(0, 10);
 }
 
+function isTodayOrPast(dateIso: string | null) {
+  const date = parseDate(dateIso);
+  if (!date) return false;
+  const today = new Date();
+  const a = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const b = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  return a <= b;
+}
+
+function stageForClient(row: ClientCRMRow, alertIds: Set<string>): FunnelStage {
+  if (row.pendingSummary.totalPending > 0) return "proposta";
+  if (row.status === "inativo" || alertIds.has(row.id) || isTodayOrPast(row.nextReturnForecastDate)) return "falar";
+  if (row.totalRevenue > 0 || row.attendances > 0) return "fechado";
+  return "novo";
+}
+
+function sourceForClient(row: ClientCRMRow) {
+  if (row.history.some((item) => normalizeText(item.description).includes("instagram"))) return "Instagram";
+  if (row.history.some((item) => normalizeText(item.description).includes("indic"))) return "Indicação";
+  if (row.lastService) return row.lastService;
+  return "Origem não informada";
+}
+
+function nextStepForClient(row: ClientCRMRow, stage: FunnelStage) {
+  if (row.pendingSummary.totalPending > 0) return "Cobrar pagamento";
+  if (stage === "falar") return "Chamar hoje";
+  if (stage === "fechado") return "Falar com ele em 30 dias";
+  return "Sem próximo passo";
+}
+
+function ClientCard({
+  row,
+  stage,
+  active,
+  onSelect,
+}: {
+  row: ClientCRMRow;
+  stage: FunnelStage;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const nextStep = nextStepForClient(row, stage);
+  const noNextStep = nextStep === "Sem próximo passo";
+
+  return (
+    <button type="button" draggable className={`fd-crm-card ${active ? "active" : ""}`} onClick={onSelect}>
+      <div className="fd-crm-card-top">
+        <span>{row.name.charAt(0).toUpperCase()}</span>
+        <div>
+          <strong>{row.name}</strong>
+          <small>{formatPhone(row.phone)}</small>
+        </div>
+      </div>
+      <div className="fd-crm-card-money">
+        <DollarSign className="h-4 w-4" />
+        <span>{formatCurrencyBRL(row.totalRevenue)}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>Origem</dt>
+          <dd>{sourceForClient(row)}</dd>
+        </div>
+        <div>
+          <dt>Último contato</dt>
+          <dd>{formatRelativeDays(row.daysSinceLastVisit)}</dd>
+        </div>
+      </dl>
+      <div className={noNextStep ? "fd-crm-next warning" : "fd-crm-next"}>
+        {noNextStep ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        <span>{nextStep}</span>
+      </div>
+    </button>
+  );
+}
+
 export default function ClientesModule() {
   const { clients, transactions } = useApp();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("todos");
   const [search, setSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [generatedMessages, setGeneratedMessages] = useState<Record<string, string>>({});
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo<ClientCRMRow[]>(() => {
     return clients.map((client) => {
@@ -131,7 +229,9 @@ export default function ClientesModule() {
       return {
         id: client.id,
         name: client.name,
+        email: client.email,
         phone: client.phone,
+        lastService: client.lastService,
         status: client.status,
         level,
         totalRevenue,
@@ -146,26 +246,6 @@ export default function ClientesModule() {
       };
     });
   }, [clients, transactions]);
-
-  const selectedClient = useMemo(
-    () => rows.find((item) => item.id === selectedClientId) ?? rows[0] ?? null,
-    [rows, selectedClientId]
-  );
-
-  const filteredRows = useMemo(() => {
-    const needle = normalizeText(search);
-    return rows
-      .filter((row) => {
-        if (!needle) return true;
-        return normalizeText(`${row.name} ${row.phone}`).includes(needle);
-      })
-      .filter((row) => {
-        if (activeFilter === "todos") return true;
-        if (activeFilter === "pendentes") return row.pendingSummary.totalPending > 0;
-        return row.level === activeFilter;
-      })
-      .sort((a, b) => b.totalRevenue - a.totalRevenue || a.name.localeCompare(b.name));
-  }, [rows, search, activeFilter]);
 
   const retentionAlerts = useMemo(
     () =>
@@ -202,51 +282,50 @@ export default function ClientesModule() {
     [retentionAlerts, billingAlerts]
   );
 
-  const crmInsights = useMemo(() => {
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const monthTop5 = rows
-      .map((row) => {
-        const monthRevenue = row.history
-          .filter((item) => item.date.slice(0, 7) === monthKey && item.paymentStatus !== "cancelado")
-          .reduce((sum, item) => sum + item.amount, 0);
-        return { ...row, monthRevenue };
+  const alertIds = useMemo(() => new Set(followUpAlerts.map((alert) => alert.clientId)), [followUpAlerts]);
+
+  const filteredRows = useMemo(() => {
+    const needle = normalizeText(search);
+    return rows
+      .filter((row) => {
+        if (!needle) return true;
+        return normalizeText(`${row.name} ${row.phone} ${row.email}`).includes(needle);
       })
-      .sort((a, b) => b.monthRevenue - a.monthRevenue)
-      .slice(0, 5);
-    const top5Revenue = monthTop5.reduce((sum, row) => sum + row.monthRevenue, 0);
-    const loyalNoReturn = rows.filter((row) => row.level === "fiel" && (row.daysSinceLastVisit ?? 0) > 60).length;
-    const pendingTotal = rows.reduce((sum, row) => sum + row.pendingSummary.totalPending, 0);
-    const recurringRevenue = rows
-      .filter((row) => row.level === "recorrente" || row.level === "fiel" || row.level === "vip")
-      .reduce((sum, row) => sum + row.totalRevenue, 0);
-    const totalRevenue = rows.reduce((sum, row) => sum + row.totalRevenue, 0);
-    const recurringShare = totalRevenue > 0 ? (recurringRevenue / totalRevenue) * 100 : 0;
+      .filter((row) => {
+        if (activeFilter === "todos") return true;
+        if (activeFilter === "pendentes") return row.pendingSummary.totalPending > 0;
+        return row.level === activeFilter;
+      })
+      .sort((a, b) => b.totalRevenue - a.totalRevenue || a.name.localeCompare(b.name));
+  }, [rows, search, activeFilter]);
 
-    const insights: string[] = [];
-    if (top5Revenue > 0) {
-      insights.push(`Seus 5 melhores clientes geraram ${formatCurrencyBRL(top5Revenue)} este mês.`);
-    }
-    if (loyalNoReturn > 0) {
-      insights.push(`Você tem ${loyalNoReturn} clientes fiéis sem retorno há mais de 60 dias.`);
-    }
-    if (pendingTotal > 0) {
-      insights.push(`Há ${formatCurrencyBRL(pendingTotal)} em pagamentos pendentes.`);
-    }
-    if (totalRevenue > 0) {
-      insights.push(`Clientes recorrentes representam ${recurringShare.toFixed(0)}% do faturamento.`);
-    }
-    return insights;
-  }, [rows]);
-
-  const unlinkedIncomeRows = useMemo(
-    () =>
-      transactions
-        .filter((tx) => tx.type === "entrada")
-        .filter((tx) => !tx.clientId && !tx.clientName)
-        .slice(0, 8),
-    [transactions]
+  const selectedClient = useMemo(
+    () => rows.find((item) => item.id === selectedClientId) ?? rows[0] ?? null,
+    [rows, selectedClientId]
   );
+
+  const funnel = useMemo(() => {
+    const grouped: Record<FunnelStage, ClientCRMRow[]> = {
+      novo: [],
+      proposta: [],
+      falar: [],
+      fechado: [],
+    };
+    filteredRows.forEach((row) => {
+      grouped[stageForClient(row, alertIds)].push(row);
+    });
+    return grouped;
+  }, [alertIds, filteredRows]);
+
+  const todayFocus = useMemo(() => {
+    const byAlert = followUpAlerts
+      .map((alert) => rows.find((row) => row.id === alert.clientId))
+      .filter((row): row is ClientCRMRow => !!row);
+    const byDate = rows.filter((row) => isTodayOrPast(row.nextReturnForecastDate));
+    const unique = new Map<string, ClientCRMRow>();
+    [...byAlert, ...byDate].forEach((row) => unique.set(row.id, row));
+    return Array.from(unique.values()).slice(0, 4);
+  }, [followUpAlerts, rows]);
 
   const handleGenerateMessage = (alert: ClientFollowUpAlert) => {
     setGeneratedMessages((prev) => ({
@@ -255,237 +334,221 @@ export default function ClientesModule() {
     }));
   };
 
-  if (clients.length === 0) {
-    return (
-      <section className="fd-panel fd-glass fd-clients-panel">
-        <header className="fd-clients-head">
-          <h2>Clientes</h2>
-          <p>CRM financeiro simples e estratégico para o seu negócio.</p>
-        </header>
-        <div className="fd-empty-state-card">
-          <p>Cadastre clientes ou vincule entradas a clientes para acompanhar seu faturamento por pessoa.</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section className="fd-panel fd-glass fd-clients-panel fd-clients-crm">
-      <header className="fd-clients-head">
-        <h2>Clientes</h2>
-        <p>CRM financeiro para entender faturamento, pendências e retenção.</p>
+    <section className="fd-crm-page">
+      <header className="fd-crm-header">
+        <div>
+          <span>Quem pode virar dinheiro</span>
+          <h2>Clientes & Vendas</h2>
+          <p>Veja quem pode virar dinheiro e o que fazer hoje.</p>
+        </div>
+        <button type="button" className="fd-crm-new-btn" onClick={() => searchRef.current?.focus()}>
+          <Plus className="h-4 w-4" />
+          Novo cliente
+        </button>
       </header>
 
-      {crmInsights.length > 0 ? (
-        <div className="fd-clients-insights-row">
-          {crmInsights.map((insight) => (
-            <div key={insight} className="fd-insight-item">
-              <span>Insight CRM</span>
-              <strong>{insight}</strong>
-            </div>
-          ))}
-        </div>
+      {clients.length === 0 ? (
+        <article className="fd-crm-empty fd-crm-panel">
+          <UsersRound className="h-9 w-9" />
+          <strong>Nenhum cliente ainda</strong>
+          <p>Cadastre clientes ou vincule entradas a clientes para acompanhar quem compra de você.</p>
+        </article>
       ) : (
-        <div className="fd-empty-state-card">
-          <p>Quando houver mais histórico de clientes, os insights estratégicos aparecerão aqui.</p>
-        </div>
-      )}
-
-      <article className="fd-clients-tools">
-        <div className="fd-clients-search">
-          <Search className="h-4 w-4" />
-          <input
-            type="text"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nome ou telefone"
-          />
-        </div>
-        <div className="fd-clients-filters">
-          {FILTER_LABELS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              className={`fd-mini-btn ${activeFilter === filter.id ? "active" : ""}`}
-              onClick={() => setActiveFilter(filter.id)}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </article>
-
-      <div className="fd-grid-two fd-clients-crm-grid">
-        <article className="fd-clients-groups fd-clients-list-card">
-          {filteredRows.length === 0 ? (
-            <div className="fd-empty-state-card">
-              <p>Nenhum cliente encontrado para esse filtro.</p>
+        <>
+          <section className="fd-crm-focus fd-crm-panel">
+            <div className="fd-crm-section-head">
+              <div>
+                <h3>Hoje você precisa falar com:</h3>
+                <p>Prioridade do dia, sem complicar.</p>
+              </div>
+              <Sparkles className="h-5 w-5" />
             </div>
-          ) : (
-            filteredRows.map((row) => (
-              <button
-                type="button"
-                key={row.id}
-                className={`fd-client-item fd-client-select ${selectedClient?.id === row.id ? "active" : ""}`}
-                onClick={() => setSelectedClientId(row.id)}
-              >
-                <div className="fd-client-main">
-                  <p>{row.name}</p>
-                  <small>{formatPhone(row.phone)}</small>
-                </div>
-                <div className="fd-client-meta">
-                  <div className="fd-client-frequency">
-                    <span>Total gerado</span>
-                    <strong>{formatCurrencyBRL(row.totalRevenue)}</strong>
-                  </div>
-                  <span className={`fd-level-badge ${row.level}`}>{LEVEL_LABELS[row.level]}</span>
-                </div>
-              </button>
-            ))
-          )}
-        </article>
-
-        <article className="fd-clients-detail-card fd-panel fd-glass">
-          {selectedClient ? (
-            <>
-              <div className="fd-panel-head">
-                <h2>{selectedClient.name}</h2>
-                <p>
-                  {LEVEL_LABELS[selectedClient.level]} • Último atendimento {formatRelativeDays(selectedClient.daysSinceLastVisit)}
-                </p>
+            {todayFocus.length === 0 ? (
+              <div className="fd-crm-done">
+                <CheckCircle2 className="h-5 w-5" />
+                <span>Nada pendente hoje 👍</span>
               </div>
-
-              <div className="fd-clients-kpi-grid">
-                <div className="fd-insight-item">
-                  <span>Total gerado</span>
-                  <strong>{formatCurrencyBRL(selectedClient.totalRevenue)}</strong>
-                </div>
-                <div className="fd-insight-item">
-                  <span>Ticket médio</span>
-                  <strong>{formatCurrencyBRL(selectedClient.averageTicket)}</strong>
-                </div>
-                <div className="fd-insight-item">
-                  <span>Atendimentos</span>
-                  <strong>{selectedClient.attendances}</strong>
-                </div>
-                <div className="fd-insight-item">
-                  <span>Última visita</span>
-                  <strong>{selectedClient.lastVisitDate ? formatDate(selectedClient.lastVisitDate) : "Sem histórico"}</strong>
-                </div>
-                <div className="fd-insight-item">
-                  <span>Previsão de retorno</span>
-                  <strong>
-                    {selectedClient.nextReturnForecastDate ? formatDate(selectedClient.nextReturnForecastDate) : "Sem previsão"}
-                  </strong>
-                </div>
-                <div className="fd-insight-item">
-                  <span>Pendências</span>
-                  <strong>{formatCurrencyBRL(selectedClient.pendingSummary.totalPending)}</strong>
-                </div>
-              </div>
-
-              <div className={`fd-clients-pending-banner ${selectedClient.pendingSummary.risk}`}>
-                <p>{selectedClient.pendingSummary.message}</p>
-                {selectedClient.pendingSummary.nearestDueDate ? (
-                  <small>Vencimento mais próximo: {formatDate(selectedClient.pendingSummary.nearestDueDate)}</small>
-                ) : null}
-              </div>
-
-              <div className="fd-subsection">
-                <h3>Histórico financeiro</h3>
-                {selectedClient.history.length === 0 ? (
-                  <p className="fd-empty">Este cliente ainda não possui serviços vinculados.</p>
-                ) : (
-                  <div className="fd-clients-history-list">
-                    {selectedClient.history.map((item) => (
-                      <div key={item.id} className="fd-list-row fd-client-history-row">
-                        <div>
-                          <p>{item.serviceName || item.description}</p>
-                          <small>
-                            {formatDate(item.date)} • {item.description} • {item.paymentMethod ?? "Sem forma de pagamento"}
-                          </small>
-                          <small className="fd-client-link-status">
-                            {item.linkedClient ? "Cliente vinculado" : "Sem cliente vinculado"}
-                          </small>
-                        </div>
-                        <div className="fd-client-history-meta">
-                          <strong>{formatCurrencyBRL(item.amount)}</strong>
-                          <span className={`fd-level-badge ${item.paymentStatus === "pendente" ? "recorrente" : item.paymentStatus === "cancelado" ? "novo" : "fiel"}`}>
-                            {item.paymentStatus}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="fd-empty-state-card">
-              <p>Selecione um cliente para abrir o detalhe financeiro.</p>
-            </div>
-          )}
-        </article>
-      </div>
-
-      <article className="fd-panel fd-glass fd-clients-followup-card">
-        <div className="fd-panel-head">
-          <h2>Clientes para acompanhar</h2>
-          <p>Prioridades de retenção e cobrança para agir no momento certo.</p>
-        </div>
-
-        {followUpAlerts.length === 0 ? (
-          <div className="fd-empty-state-card">
-            <p>Nenhum cliente precisa de atenção agora.</p>
-          </div>
-        ) : (
-          <div className="fd-clients-followup-list">
-            {followUpAlerts.map((alert) => (
-              <div key={alert.id} className={`fd-clients-followup-item ${alert.severity}`}>
-                <div>
-                  <p>{alert.message}</p>
-                </div>
-                <div className="fd-clients-followup-actions">
-                  <button type="button" className="fd-mini-btn" onClick={() => handleGenerateMessage(alert)}>
-                    <MessageCircle className="h-4 w-4" />
-                    Gerar mensagem
+            ) : (
+              <div className="fd-crm-focus-list">
+                {todayFocus.map((row) => (
+                  <button key={row.id} type="button" onClick={() => setSelectedClientId(row.id)}>
+                    <span>{row.name.charAt(0).toUpperCase()}</span>
+                    <div>
+                      <strong>{row.name}</strong>
+                      <small>{nextStepForClient(row, stageForClient(row, alertIds))}</small>
+                    </div>
+                    <em>{formatCurrencyBRL(row.totalRevenue)}</em>
                   </button>
-                </div>
-                {generatedMessages[alert.id] ? (
-                  <div className="fd-clients-whatsapp-message">
-                    <small>Mensagem sugerida:</small>
-                    <p>{generatedMessages[alert.id]}</p>
-                  </div>
-                ) : null}
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </article>
+            )}
+          </section>
 
-      <article className="fd-panel fd-glass">
-        <div className="fd-panel-head">
-          <h2>
-            <UsersRound className="h-4 w-4" /> Entradas sem cliente vinculado
-          </h2>
-          <p>Use essa lista para organizar lançamentos antigos sem vínculo.</p>
-        </div>
-        {unlinkedIncomeRows.length === 0 ? (
-          <p className="fd-empty">Nenhuma entrada sem cliente vinculado no momento.</p>
-        ) : (
-          <div className="fd-list">
-            {unlinkedIncomeRows.map((tx) => (
-              <div key={tx.id} className="fd-list-row">
-                <div>
-                  <p>{tx.description}</p>
-                  <small>{formatDate(tx.date)} • Sem cliente vinculado</small>
+          <article className="fd-crm-tools fd-crm-panel">
+            <div className="fd-crm-search">
+              <Search className="h-4 w-4" />
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar por nome, telefone ou email"
+              />
+            </div>
+            <div className="fd-crm-filters">
+              {FILTER_LABELS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  className={activeFilter === filter.id ? "active" : ""}
+                  onClick={() => setActiveFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <section className="fd-crm-funnel" aria-label="Quem pode virar dinheiro">
+            {FUNNEL_COLUMNS.map((column) => (
+              <article key={column.id} className="fd-crm-column">
+                <header>
+                  <div>
+                    <h3>{column.title}</h3>
+                    <p>{column.helper}</p>
+                  </div>
+                  <span>{funnel[column.id].length}</span>
+                </header>
+                <div className="fd-crm-column-list">
+                  {funnel[column.id].length === 0 ? (
+                    <div className="fd-crm-column-empty">Sem clientes aqui</div>
+                  ) : (
+                    funnel[column.id].map((row) => (
+                      <ClientCard
+                        key={row.id}
+                        row={row}
+                        stage={column.id}
+                        active={selectedClient?.id === row.id}
+                        onSelect={() => setSelectedClientId(row.id)}
+                      />
+                    ))
+                  )}
                 </div>
-                <strong className="fd-positive">{formatCurrencyBRL(tx.amount)}</strong>
-              </div>
+              </article>
             ))}
-          </div>
-        )}
-      </article>
+          </section>
+
+          <section className="fd-crm-detail-grid">
+            <article className="fd-crm-panel fd-crm-detail">
+              {selectedClient ? (
+                <>
+                  <div className="fd-crm-section-head">
+                    <div>
+                      <h3>{selectedClient.name}</h3>
+                      <p>
+                        {LEVEL_LABELS[selectedClient.level]} · Último contato {formatRelativeDays(selectedClient.daysSinceLastVisit)}
+                      </p>
+                    </div>
+                    <span className={`fd-crm-level ${selectedClient.level}`}>{LEVEL_LABELS[selectedClient.level]}</span>
+                  </div>
+
+                  <div className="fd-crm-kpis">
+                    <div>
+                      <small>Valor estimado</small>
+                      <strong>{formatCurrencyBRL(selectedClient.totalRevenue)}</strong>
+                    </div>
+                    <div>
+                      <small>Ticket médio</small>
+                      <strong>{formatCurrencyBRL(selectedClient.averageTicket)}</strong>
+                    </div>
+                    <div>
+                      <small>Histórico</small>
+                      <strong>{selectedClient.attendances}</strong>
+                    </div>
+                    <div>
+                      <small>Pendências</small>
+                      <strong>{formatCurrencyBRL(selectedClient.pendingSummary.totalPending)}</strong>
+                    </div>
+                  </div>
+
+                  <div className="fd-crm-context">
+                    <div>
+                      <Clock3 className="h-4 w-4" />
+                      <p>Próximo passo</p>
+                      <strong>{nextStepForClient(selectedClient, stageForClient(selectedClient, alertIds))}</strong>
+                    </div>
+                    <div>
+                      <CalendarClock className="h-4 w-4" />
+                      <p>Pós-venda</p>
+                      <strong>{stageForClient(selectedClient, alertIds) === "fechado" ? "Falar com ele em 30 dias" : "Ainda em aberto"}</strong>
+                    </div>
+                    <div>
+                      <UserRound className="h-4 w-4" />
+                      <p>Contexto rápido</p>
+                      <strong>{selectedClient.lastService || "Sem observação salva"}</strong>
+                    </div>
+                  </div>
+
+                  <div className={`fd-crm-pending ${selectedClient.pendingSummary.risk}`}>
+                    <p>{selectedClient.pendingSummary.message}</p>
+                    {selectedClient.pendingSummary.nearestDueDate ? (
+                      <small>Vencimento mais próximo: {formatDate(selectedClient.pendingSummary.nearestDueDate)}</small>
+                    ) : null}
+                  </div>
+
+                  <div className="fd-crm-history">
+                    <h4>Histórico rápido</h4>
+                    {selectedClient.history.length === 0 ? (
+                      <p className="fd-crm-muted">Este cliente ainda não possui serviços vinculados.</p>
+                    ) : (
+                      selectedClient.history.slice(0, 6).map((item) => (
+                        <div key={item.id}>
+                          <span>{formatDate(item.date)}</span>
+                          <p>{item.serviceName || item.description}</p>
+                          <strong>{formatCurrencyBRL(item.amount)}</strong>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="fd-crm-muted">Selecione um cliente para ver o histórico.</p>
+              )}
+            </article>
+
+            <article className="fd-crm-panel fd-crm-followup">
+              <div className="fd-crm-section-head">
+                <div>
+                  <h3>Falar depois</h3>
+                  <p>Mensagens prontas para não deixar dinheiro parado.</p>
+                </div>
+                <MessageCircle className="h-5 w-5" />
+              </div>
+
+              {followUpAlerts.length === 0 ? (
+                <div className="fd-crm-done">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span>Nenhum cliente precisa de atenção agora.</span>
+                </div>
+              ) : (
+                <div className="fd-crm-followup-list">
+                  {followUpAlerts.slice(0, 5).map((alert) => (
+                    <div key={alert.id} className={`fd-crm-followup-item ${alert.severity}`}>
+                      <p>{alert.message}</p>
+                      <button type="button" onClick={() => handleGenerateMessage(alert)}>
+                        <MessageCircle className="h-4 w-4" />
+                        Gerar mensagem
+                      </button>
+                      {generatedMessages[alert.id] ? <small>{generatedMessages[alert.id]}</small> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </section>
+        </>
+      )}
     </section>
   );
 }

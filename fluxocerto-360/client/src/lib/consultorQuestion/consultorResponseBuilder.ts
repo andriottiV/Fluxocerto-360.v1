@@ -99,7 +99,7 @@ function answerForInvest(input: BuildAnswerInput): ConsultorStructuredAnswer {
   if (readiness.level === "ready") {
     return {
       ...base,
-      leituraAtual: "Voce pode investir, desde que mantenha uma parte protegida para o dia a dia.",
+      leituraAtual: "Você pode investir, desde que mantenha uma parte protegida para o dia a dia.",
       principalRisco: "O risco e investir demais e perder folga para o caixa rodar com tranquilidade.",
       oQueFazerAgora: "Comece com aporte pequeno e recorrente, sem comprometer sua operacao.",
       proximoPasso: "Revise semanalmente e aumente os aportes so se o fluxo seguir estavel.",
@@ -110,9 +110,9 @@ function answerForInvest(input: BuildAnswerInput): ConsultorStructuredAnswer {
     ...base,
     leituraAtual:
       reserveCoverage < 0.5
-        ? "Hoje ainda nao e o melhor momento para investir com seguranca."
-        : "Voce pode investir com cautela, sem forcar o caixa.",
-    principalRisco: "Sem uma reserva mais consistente, qualquer imprevisto pode apertar o seu mes.",
+        ? "Hoje ainda não é o melhor momento para investir com segurança."
+        : "Você pode investir com cautela, sem forçar o caixa.",
+    principalRisco: "Sem uma reserva mais consistente, qualquer imprevisto pode apertar o seu mês.",
     oQueFazerAgora: "Priorize fortalecer reserva e manter previsibilidade nas saidas.",
     proximoPasso: "Assim que o caixa estiver mais folgado, inicie aportes graduais.",
   };
@@ -125,7 +125,7 @@ function answerForSpending(input: BuildAnswerInput): ConsultorStructuredAnswer {
   return {
     ...base,
     leituraAtual: `Seu maior vazamento hoje esta em ${topCategory}.`,
-    principalRisco: "Gastos sem teto nessa frente podem corroer sua margem sem voce perceber.",
+    principalRisco: "Gastos sem teto nessa frente podem corroer sua margem sem você perceber.",
     oQueFazerAgora: `Defina limite claro para ${topCategory} e acompanhe dia a dia.`,
     proximoPasso: "Reveja essa categoria toda semana ate estabilizar.",
   };
@@ -193,13 +193,13 @@ function answerForBusinessHealth(input: BuildAnswerInput): ConsultorStructuredAn
     ...base,
     leituraAtual:
       business.net >= 0
-        ? "Seu negocio mostra sinais de saude, com espaco para evoluir com seguranca."
+        ? "Seu negócio mostra sinais de saúde, com espaço para evoluir com segurança."
         : "Seu negocio esta sob pressao e precisa de ajuste para ganhar folego.",
     principalRisco:
       business.net < 0
         ? "Se mantiver esse ritmo, o caixa tende a apertar nos proximos ciclos."
         : "Sem rotina de controle, a margem pode cair sem aviso.",
-    oQueFazerAgora: "Priorize receita recorrente e corte custos que nao trazem retorno.",
+    oQueFazerAgora: "Priorize receita recorrente e corte custos que não trazem retorno.",
     proximoPasso: "Acompanhe semanalmente margem e caixa para corrigir desvios cedo.",
   };
 }
@@ -209,8 +209,8 @@ function answerForSaving(input: BuildAnswerInput): ConsultorStructuredAnswer {
 
   return {
     ...base,
-    leituraAtual: "Voce consegue guardar, mas o segredo e constancia e nao valor alto de uma vez.",
-    principalRisco: "Poupar sem regra clara costuma perder prioridade no meio do mes.",
+    leituraAtual: "Você consegue guardar, mas o segredo é constância e não valor alto de uma vez.",
+    principalRisco: "Poupar sem regra clara costuma perder prioridade no meio do mês.",
     oQueFazerAgora: "Defina um valor fixo e transfira primeiro para a reserva.",
     proximoPasso: "Aumente esse valor aos poucos sempre que seu fluxo estiver mais estavel.",
   };

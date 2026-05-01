@@ -60,7 +60,7 @@ export default function FinancialAdvisorSummary({
           className="fd-primary-btn"
           onClick={() => setLocation("/consultor")}
         >
-          Ver analise completa
+          Ver análise completa
         </button>
       </div>
     </article>

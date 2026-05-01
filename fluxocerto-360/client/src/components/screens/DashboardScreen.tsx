@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Bell, SunMoon } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Bell, Check, SunMoon, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 
 import { useApp } from "@/contexts/AppContext";
@@ -7,25 +7,94 @@ import { ScreenType } from "@/lib/types";
 import { buildDashboardIntelligence } from "@/lib/dashboardIntelligence";
 import { canAccessAdmin } from "@/lib/authz";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
+import AppHeader from "@/components/ui/AppHeader";
 import {
   DASHBOARD_ROUTES,
-  SIDEBAR_ITEMS,
   type DashboardRoutePath,
 } from "@/components/dashboard/sidebarConfig";
 import InicioModule from "@/components/dashboard/modules/InicioModule";
 import FinanceiroModule from "@/components/dashboard/modules/FinanceiroModule";
-import ConsultorModule from "@/components/dashboard/modules/ConsultorModule";
-import ClientesModule from "@/components/dashboard/modules/ClientesModule";
-import ItensModule from "@/components/dashboard/modules/ItensModule";
-import AjustesModule from "@/components/dashboard/modules/AjustesModule";
-import AdministracaoModule from "@/components/dashboard/modules/AdministracaoModule";
 import GlobalFloatingAction from "@/components/dashboard/shared/GlobalFloatingAction";
 
 type ThemeMode = "dark" | "light";
 
+const ConsultorModule = lazy(() => import("@/components/dashboard/modules/ConsultorModule"));
+const ClientesModule = lazy(() => import("@/components/dashboard/modules/ClientesModule"));
+const ItensModule = lazy(() => import("@/components/dashboard/modules/ItensModule"));
+const AjustesModule = lazy(() => import("@/components/dashboard/modules/AjustesModule"));
+const AdministracaoModule = lazy(() => import("@/components/dashboard/modules/AdministracaoModule"));
+
 function normalizeRoute(path: string): DashboardRoutePath {
   const plainPath = path.split("?")[0] as DashboardRoutePath;
   return DASHBOARD_ROUTES.has(plainPath) ? plainPath : "/dashboard";
+}
+
+const ROUTE_META: Record<DashboardRoutePath, { title: string; subtitle: string }> = {
+  "/dashboard": {
+    title: "Início",
+    subtitle: "Aqui está a saúde do seu dinheiro hoje.",
+  },
+  "/financeiro": {
+    title: "Fluxo de Caixa",
+    subtitle: "Veja o dinheiro real que entrou, saiu e ficou livre.",
+  },
+  "/consultor": {
+    title: "Consultor Flux",
+    subtitle: "Pergunte e receba respostas com base nos seus dados reais.",
+  },
+  "/clientes": {
+    title: "Clientes & Vendas",
+    subtitle: "Veja quem pode virar dinheiro e o que fazer hoje.",
+  },
+  "/itens": {
+    title: "Itens / Custos",
+    subtitle: "Enxergue onde seu lucro pode escapar sem você perceber.",
+  },
+  "/ajustes": {
+    title: "Ajustes",
+    subtitle: "Deixe o FluxoCerto do seu jeito, sem complicar.",
+  },
+  "/administracao": {
+    title: "Administração",
+    subtitle: "Gerencie acessos e acompanhe usuários autorizados.",
+  },
+};
+
+function getNotificationReadStorageKey(userId?: string) {
+  return userId ? `fc360:dashboard-notifications-read:${userId}` : null;
+}
+
+function readStoredNotificationIds(userId?: string): Record<string, boolean> {
+  const storageKey = getNotificationReadStorageKey(userId);
+  if (!storageKey || typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, boolean>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredNotificationIds(userId: string | undefined, readIds: Record<string, boolean>) {
+  const storageKey = getNotificationReadStorageKey(userId);
+  if (!storageKey || typeof window === "undefined") return;
+
+  window.localStorage.setItem(storageKey, JSON.stringify(readIds));
+}
+
+function DashboardModuleLoading() {
+  return (
+    <section className="fd-panel fd-glass">
+      <div className="fd-panel-head">
+        <h2>Carregando módulo</h2>
+        <p>Preparando a tela com seus dados.</p>
+      </div>
+    </section>
+  );
 }
 
 export default function DashboardScreen() {
@@ -33,6 +102,9 @@ export default function DashboardScreen() {
 
   const [mode, setMode] = useState<ThemeMode>("dark");
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<Record<string, boolean>>(() =>
+    readStoredNotificationIds(user?.id)
+  );
   const [location, setLocation] = useLocation();
   const activePath = normalizeRoute(location);
   const isAdmin = canAccessAdmin(user);
@@ -53,16 +125,35 @@ export default function DashboardScreen() {
     setIsNotificationOpen(false);
   }, [activePath]);
 
-  const currentSectionLabel = useMemo(
-    () => SIDEBAR_ITEMS.find((item) => item.path === activePath)?.label ?? "Dashboard",
-    [activePath]
-  );
-  const isDashboardHome = activePath === "/dashboard";
-  const motivationalMessage = "Pequenas decisoes hoje, grandes resultados amanha.";
+  useEffect(() => {
+    setReadNotificationIds(readStoredNotificationIds(user?.id));
+  }, [user?.id]);
+
+  const currentSection = ROUTE_META[activePath];
   const intelligence = useMemo(
     () => buildDashboardIntelligence({ clients, pots, paymentAccounts, transactions }),
     [clients, pots, paymentAccounts, transactions]
   );
+  const unreadNotifications = intelligence.notifications.filter((item) => !readNotificationIds[item.id]);
+
+  const markNotificationAsRead = (notificationId: string) => {
+    setReadNotificationIds((prev) => {
+      const next = { ...prev, [notificationId]: true };
+      writeStoredNotificationIds(user?.id, next);
+      return next;
+    });
+  };
+
+  const clearAllNotifications = () => {
+    setReadNotificationIds((prev) => {
+      const next = {
+        ...prev,
+        ...Object.fromEntries(intelligence.notifications.map((item) => [item.id, true])),
+      };
+      writeStoredNotificationIds(user?.id, next);
+      return next;
+    });
+  };
 
   return (
     <div className="fd-shell" data-theme={mode}>
@@ -77,30 +168,11 @@ export default function DashboardScreen() {
       />
 
       <main className="fd-main">
-        <header className="fd-header fd-glass">
-          <div className="fd-header-brand-wrap">
-            {!isDashboardHome ? (
-              <img
-                src="/icon.png"
-                alt="FluxoCerto"
-                className="fd-header-brand-icon"
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  objectFit: "contain",
-                }}
-                onError={(event) => {
-                  event.currentTarget.style.display = "none";
-                }}
-              />
-            ) : null}
-            <h1 className="fd-brand-title compact">{currentSectionLabel}</h1>
-            <p className={`fd-brand-caption ${isDashboardHome ? "fd-brand-motto" : ""}`}>
-              {isDashboardHome ? motivationalMessage : "Painel de operacao"}
-            </p>
-          </div>
-
-          <div className="fd-header-right">
+        <AppHeader
+          title={currentSection.title}
+          subtitle={currentSection.subtitle}
+          rightActions={
+            <>
             <button
               className="fd-icon-btn"
               onClick={() => setMode((prev) => (prev === "dark" ? "light" : "dark"))}
@@ -111,45 +183,81 @@ export default function DashboardScreen() {
 
             <button
               className="fd-icon-btn fd-notif-btn"
-              aria-label="Notificacoes"
+              aria-label="Notificações"
+              aria-expanded={isNotificationOpen}
               onClick={() => setIsNotificationOpen((prev) => !prev)}
             >
               <Bell className="h-4 w-4" />
-              {intelligence.notifications.length > 0 ? (
-                <span className="fd-notif-badge">{intelligence.notifications.length}</span>
+              {unreadNotifications.length > 0 ? (
+                <span className="fd-notif-badge">{unreadNotifications.length}</span>
               ) : null}
             </button>
-          </div>
-        </header>
+            </>
+          }
+        />
 
         {isNotificationOpen ? (
           <section className="fd-panel fd-glass fd-notification-panel">
             <div className="fd-panel-head">
-              <h2>Notificacoes inteligentes</h2>
-              <p>Atualizadas com base nos seus dados</p>
+              <h2>Notificações inteligentes</h2>
+              <p>Atualizadas com base nos seus dados reais.</p>
             </div>
-            <div className="fd-list">
-              {intelligence.notifications.map((notification) => (
-                <div key={notification.id} className={`fd-list-row fd-notif-row ${notification.type}`}>
-                  <p>{notification.message}</p>
+            {intelligence.notifications.length > 0 ? (
+              <>
+                <div className="fd-notification-actions">
+                  <button
+                    type="button"
+                    className="fd-mini-btn"
+                    onClick={clearAllNotifications}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Limpar todas
+                  </button>
                 </div>
-              ))}
-            </div>
+                <div className="fd-list">
+                  {intelligence.notifications.map((notification) => {
+                    const isRead = !!readNotificationIds[notification.id];
+                    return (
+                      <div key={notification.id} className={`fd-list-row fd-notif-row ${notification.type} ${isRead ? "read" : ""}`}>
+                        <p>{notification.message}</p>
+                        {!isRead ? (
+                          <button
+                            type="button"
+                            className="fd-mini-btn"
+                            onClick={() => markNotificationAsRead(notification.id)}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            Vista
+                          </button>
+                        ) : (
+                          <span>Vista</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="fd-empty">Nenhuma notificação real por enquanto.</p>
+            )}
           </section>
         ) : null}
 
         {activePath === "/dashboard" && (
-          <InicioModule userName={user?.name || "Usuario"} intelligence={intelligence} />
+          <InicioModule userName={user?.name || "Usuário"} intelligence={intelligence} />
         )}
         {activePath === "/financeiro" && <FinanceiroModule />}
-        {activePath === "/consultor" && <ConsultorModule />}
-        {activePath === "/clientes" && <ClientesModule />}
-        {activePath === "/itens" && <ItensModule />}
-        {activePath === "/ajustes" && <AjustesModule />}
-        {activePath === "/administracao" && isAdmin && <AdministracaoModule />}
+        <Suspense fallback={<DashboardModuleLoading />}>
+          {activePath === "/consultor" && <ConsultorModule />}
+          {activePath === "/clientes" && <ClientesModule />}
+          {activePath === "/itens" && <ItensModule />}
+          {activePath === "/ajustes" && <AjustesModule />}
+          {activePath === "/administracao" && isAdmin && <AdministracaoModule />}
+        </Suspense>
       </main>
 
       <GlobalFloatingAction />
     </div>
   );
 }
+

@@ -1,179 +1,89 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle, CalendarRange, CheckCircle2, Gauge, TrendingUp } from "lucide-react";
+import { useMemo } from "react";
+import {
+  AlertTriangle,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  BriefcaseBusiness,
+  CalendarDays,
+  CheckCircle2,
+  CircleDollarSign,
+  HandCoins,
+  Landmark,
+  PiggyBank,
+  ShieldCheck,
+  TrendingUp,
+  WalletCards,
+} from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
-import { getUserOnboardingData } from "@/lib/auth";
-import {
-  calculateCashflowForecast,
-  formatCurrency,
-  formatPercentage,
-  getCashRiskLevel,
-  getMonthlyComparison,
-} from "@/lib/cashflowForecast";
 import {
   buildDailyTotals,
   calculateTotals,
+  getTransactionGrossAmount,
   isInCurrentMonth,
   parseDateSafe,
   sortTransactionsByDateDesc,
 } from "@/lib/finance";
-import { TransactionType } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { PotType, TransactionType, type Cost, type Transaction } from "@/lib/types";
+import { formatCurrency, formatDate } from "@/lib/utils";
+
+type Tone = "success" | "danger" | "warning" | "info";
+
+const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+function isOnboardingSeed(transaction: Transaction) {
+  return (
+    transaction.notes === "onboarding-seed-income" ||
+    (transaction.origin === "Onboarding" &&
+      transaction.category === "onboarding" &&
+      transaction.description === "Saldo inicial configurado no onboarding")
+  );
+}
+
+function isCurrentMonthDate(date: string) {
+  const parsed = parseDateSafe(date);
+  return parsed ? isInCurrentMonth(parsed) : false;
+}
+
+function monthLabel(now = new Date()) {
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
+    .format(now)
+    .replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function matchesCategory(value: string, terms: string[]) {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+function sumCostsByTerms(costs: Cost[], terms: string[]) {
+  return costs
+    .filter((cost) => matchesCategory(`${cost.name} ${cost.category}`, terms))
+    .reduce((sum, cost) => sum + Math.max(0, cost.amount), 0);
+}
 
 function FlowBarsChart({ data }: { data: Array<{ date: string; value: number }> }) {
+  if (data.length === 0) return null;
   const maxAbs = Math.max(...data.map((item) => Math.abs(item.value)), 1);
 
   return (
-    <div className="fd-flow-chart">
-      <div className="fd-flow-bars">
-        {data.map((item) => {
-          const percent = Math.max(8, Math.round((Math.abs(item.value) / maxAbs) * 100));
-          return (
-            <div key={item.date} className="fd-flow-bar-col">
-              <span className={item.value >= 0 ? "positive" : "negative"}>
-                {item.value >= 0 ? "+" : "-"}
-                {formatCurrency(Math.abs(item.value))}
-              </span>
-              <div className="fd-flow-bar-track">
-                <div className={item.value >= 0 ? "positive" : "negative"} style={{ height: `${percent}%` }} />
-              </div>
-              <small>
-                {item.date.slice(8, 10)}/{item.date.slice(5, 7)}
-              </small>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AnalyticsDonut({ income, expense, costs }: { income: number; expense: number; costs: number }) {
-  const total = Math.max(1, income + expense + costs);
-  const incomePct = Math.round((income / total) * 100);
-  const expensePct = Math.round((expense / total) * 100);
-  const costsPct = Math.max(0, 100 - incomePct - expensePct);
-
-  return (
-    <div className="fd-analytics-donut-wrap">
-      <div
-        className="fd-analytics-donut"
-        style={{
-          background: `conic-gradient(#22c55e 0 ${incomePct}%, #f97316 ${incomePct}% ${
-            incomePct + expensePct
-          }%, #38bdf8 ${incomePct + expensePct}% 100%)`,
-        }}
-      />
-      <div className="fd-analytics-donut-legend">
-        <div>
-          <span className="dot income" />
-          <p>Entradas</p>
-          <strong>{incomePct}%</strong>
-        </div>
-        <div>
-          <span className="dot expense" />
-          <p>Saidas</p>
-          <strong>{expensePct}%</strong>
-        </div>
-        <div>
-          <span className="dot costs" />
-          <p>Custos</p>
-          <strong>{costsPct}%</strong>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ForecastLineChart({
-  points,
-}: {
-  points: Array<{ day: number; balance: number; conservativeBalance: number; bestBalance: number }>;
-}) {
-  if (points.length === 0) return null;
-
-  const values = points.flatMap((point) => [point.balance, point.conservativeBalance, point.bestBalance]);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(1, max - min);
-  const width = 960;
-  const height = 220;
-  const padX = 24;
-  const padY = 18;
-  const usableW = width - padX * 2;
-  const usableH = height - padY * 2;
-
-  const toX = (index: number) => padX + (index / Math.max(1, points.length - 1)) * usableW;
-  const toY = (value: number) => padY + (1 - (value - min) / range) * usableH;
-  const toPath = (list: number[]) => list.map((value, index) => `${index === 0 ? "M" : "L"} ${toX(index)} ${toY(value)}`).join(" ");
-
-  const projectedPath = toPath(points.map((item) => item.balance));
-  const conservativePath = toPath(points.map((item) => item.conservativeBalance));
-  const bestPath = toPath(points.map((item) => item.bestBalance));
-
-  return (
-    <div className="fd-forecast-chart-wrap">
-      <svg className="fd-forecast-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Grafico de projecao de caixa">
-        {[0.2, 0.4, 0.6, 0.8].map((ratio) => (
-          <line
-            key={ratio}
-            x1={padX}
-            x2={width - padX}
-            y1={padY + usableH * ratio}
-            y2={padY + usableH * ratio}
-            stroke="rgba(148, 163, 184, 0.18)"
-            strokeWidth="1"
-          />
-        ))}
-        <path d={conservativePath} className="fd-forecast-line conservative" />
-        <path d={bestPath} className="fd-forecast-line best" />
-        <path d={projectedPath} className="fd-forecast-line projected" />
-      </svg>
-      <div className="fd-forecast-legend">
-        <span>
-          <i className="projected" /> Cenario estimado
-        </span>
-        <span>
-          <i className="best" /> Melhor cenario
-        </span>
-        <span>
-          <i className="conservative" /> Cenario conservador
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function MonthlyComparisonChart({
-  rows,
-}: {
-  rows: Array<{ monthKey: string; label: string; income: number; expense: number; net: number }>;
-}) {
-  if (rows.length === 0) return null;
-  const maxValue = Math.max(
-    1,
-    ...rows.flatMap((row) => [Math.abs(row.income), Math.abs(row.expense)])
-  );
-
-  return (
-    <div className="fd-monthly-bars">
-      {rows.map((row) => {
-        const incomePct = Math.max(8, Math.round((row.income / maxValue) * 100));
-        const expensePct = Math.max(8, Math.round((row.expense / maxValue) * 100));
+    <div className="fd-cash-chart">
+      {data.map((item) => {
+        const height = Math.max(12, Math.round((Math.abs(item.value) / maxAbs) * 100));
+        const parsed = parseDateSafe(item.date);
         return (
-          <div key={row.monthKey} className="fd-monthly-bar-row">
-            <header>
-              <strong>{row.label}</strong>
-              <small>Saldo {formatCurrency(row.net)}</small>
-            </header>
-            <div className="fd-monthly-bar-track income">
-              <div style={{ width: `${incomePct}%` }} />
-              <span>Receitas {formatCurrency(row.income)}</span>
+          <div key={item.date} className="fd-cash-chart-col">
+            <span className={item.value >= 0 ? "positive" : "negative"}>
+              {item.value >= 0 ? "+" : "-"}
+              {formatCurrency(Math.abs(item.value))}
+            </span>
+            <div className="fd-cash-chart-track">
+              <div className={item.value >= 0 ? "positive" : "negative"} style={{ height: `${height}%` }} />
             </div>
-            <div className="fd-monthly-bar-track expense">
-              <div style={{ width: `${expensePct}%` }} />
-              <span>Despesas {formatCurrency(row.expense)}</span>
-            </div>
+            <small>{parsed ? DAY_LABELS[parsed.getDay()] : item.date.slice(8, 10)}</small>
           </div>
         );
       })}
@@ -181,313 +91,344 @@ function MonthlyComparisonChart({
   );
 }
 
+function MetricCard({
+  label,
+  value,
+  helper,
+  tone,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  tone: Tone;
+  icon: typeof ArrowDownCircle;
+}) {
+  return (
+    <article className={`fd-cash-metric ${tone}`}>
+      <span>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div>
+        <p>{label}</p>
+        <strong>{value}</strong>
+        <small>{helper}</small>
+      </div>
+    </article>
+  );
+}
+
 export default function FinanceiroModule() {
-  const { transactions, costs, adjustmentAccounts, paymentAccounts, pots, user } = useApp();
-  const [forecastDays, setForecastDays] = useState<30 | 60 | 90>(30);
+  const { transactions, costs, potDistribution, pots } = useApp();
 
+  const realTransactions = useMemo(() => transactions.filter((tx) => !isOnboardingSeed(tx)), [transactions]);
   const monthTransactions = useMemo(
-    () =>
-      transactions.filter((tx) => {
-        const date = parseDateSafe(tx.date);
-        return date ? isInCurrentMonth(date) : false;
-      }),
-    [transactions]
+    () => realTransactions.filter((tx) => isCurrentMonthDate(tx.date)),
+    [realTransactions]
   );
-
+  const monthCosts = useMemo(() => costs.filter((cost) => isCurrentMonthDate(cost.date)), [costs]);
   const monthTotals = useMemo(() => calculateTotals(monthTransactions), [monthTransactions]);
-  const dailySeries = useMemo(() => buildDailyTotals(monthTransactions), [monthTransactions]);
-  const bestDay = useMemo(() => [...dailySeries].sort((a, b) => b.value - a.value)[0], [dailySeries]);
-  const worstDay = useMemo(() => [...dailySeries].sort((a, b) => a.value - b.value)[0], [dailySeries]);
-  const recent = useMemo(() => sortTransactionsByDateDesc(monthTransactions).slice(0, 20), [monthTransactions]);
-  const totalCosts = useMemo(() => costs.reduce((sum, cost) => sum + cost.amount, 0), [costs]);
+  const dailySeries = useMemo(() => buildDailyTotals(monthTransactions).slice(-7), [monthTransactions]);
+  const recent = useMemo(() => sortTransactionsByDateDesc(monthTransactions).slice(0, 12), [monthTransactions]);
 
-  const incomeRows = useMemo(
-    () => recent.filter((tx) => tx.type === TransactionType.INCOME).slice(0, 8),
-    [recent]
-  );
-  const expenseRows = useMemo(
-    () => recent.filter((tx) => tx.type === TransactionType.EXPENSE).slice(0, 8),
-    [recent]
-  );
-  const chartRows = useMemo(() => dailySeries.slice(-7), [dailySeries]);
+  const hasRealIncome = monthTransactions.some((tx) => tx.type === TransactionType.INCOME);
+  const totalCosts = monthCosts.reduce((sum, cost) => sum + Math.max(0, cost.amount), 0);
+  const lucroLiquido = hasRealIncome ? Number((monthTotals.income - monthTotals.fees - totalCosts).toFixed(2)) : 0;
+  const reservedForPlan = hasRealIncome
+    ? Number(((monthTotals.netIncome * (potDistribution.business + potDistribution.reserve)) / 100).toFixed(2))
+    : 0;
+  const podeUsar = hasRealIncome ? Number(Math.max(0, lucroLiquido - reservedForPlan).toFixed(2)) : 0;
 
-  const onboardingData = useMemo(() => (user?.id ? getUserOnboardingData(user.id) : {}), [user?.id]);
-  const currentBalance = useMemo(() => {
-    const potsTotal = pots.reduce((sum, pot) => sum + (Number.isFinite(pot.balance) ? pot.balance : 0), 0);
-    if (Number.isFinite(potsTotal) && Math.abs(potsTotal) > 0) return potsTotal;
-    return monthTotals.periodBalance;
-  }, [monthTotals.periodBalance, pots]);
+  const businessPot = pots.find((pot) => pot.type === PotType.BUSINESS);
+  const personalPot = pots.find((pot) => pot.type === PotType.PERSONAL);
+  const reservePot = pots.find((pot) => pot.type === PotType.RESERVE);
+  const taxProvision = sumCostsByTerms(monthCosts, ["imposto", "taxa", "mei", "das"]);
+  const vacationProvision = sumCostsByTerms(monthCosts, ["ferias", "descanso"]);
+  const investmentProvision = sumCostsByTerms(monthCosts, ["investimento", "equipamento", "crescimento"]);
 
-  const forecast = useMemo(
-    () =>
-      calculateCashflowForecast({
-        transactions,
-        currentBalance,
-        periodDays: forecastDays,
-        fixedExpenses: onboardingData.fixedExpenses ?? [],
-        recurringExpenses: adjustmentAccounts.map((account) => ({
-          amount: account.amount,
-          dueDate: account.dueDate,
-          status: account.status,
-        })),
-        pendingBills: paymentAccounts.map((account) => ({
-          amount: account.amount,
-          status: account.status,
-          dueDate: (() => {
-            const today = new Date();
-            const due = new Date(today.getFullYear(), today.getMonth(), Math.max(1, Math.min(28, account.dueDate)));
-            if (due < today) due.setMonth(due.getMonth() + 1);
-            return due.toISOString().slice(0, 10);
-          })(),
-        })),
-      }),
-    [transactions, currentBalance, forecastDays, onboardingData.fixedExpenses, adjustmentAccounts, paymentAccounts]
-  );
-
-  const riskLevel = useMemo(() => getCashRiskLevel(forecast), [forecast]);
-  const monthlyComparison = useMemo(() => getMonthlyComparison(transactions, 6), [transactions]);
-
-  const riskMessage = useMemo(() => {
-    if (!forecast.dataSufficient) {
-      return {
-        level: "empty",
-        title: "Cadastre algumas entradas e saidas para liberar sua projecao de caixa.",
-        subtitle: "Estimativa baseada na sua media de entradas e despesas cadastradas.",
-      };
+  const alerts = useMemo(() => {
+    const list: string[] = [];
+    if (!hasRealIncome) {
+      list.push("Nada registrado ainda. Começa colocando sua primeira entrada.");
+      return list;
     }
-    if (forecast.riskDay !== null && forecast.riskDay <= 30) {
-      return {
-        level: "critical",
-        title: `Atencao: sua projecao indica risco de saldo negativo em ${forecast.riskDay} dias.`,
-        subtitle: "Revise despesas fixas e priorize entradas dos proximos dias.",
-      };
-    }
-    if (forecast.riskDay !== null && forecast.riskDay <= 60) {
-      return {
-        level: "moderate",
-        title: `Cuidado: existe risco de saldo negativo em ${forecast.riskDay} dias.`,
-        subtitle: "Ajustar custos agora pode evitar pressao de caixa no proximo ciclo.",
-      };
-    }
-    if (forecast.fixedCommitmentMonthly > forecast.estimatedDailyIncome * 30 * 0.7) {
-      return {
-        level: "moderate",
-        title: "Revise suas despesas fixas: elas estao consumindo boa parte da sua media de entradas.",
-        subtitle: "Seu caixa segue estavel, mas com pouca margem para imprevistos.",
-      };
-    }
-    return {
-      level: "positive",
-      title: "Seu caixa se mantem saudavel pelos proximos 30 dias.",
-      subtitle: "Continue monitorando entradas e mantendo o ritmo de controle.",
-    };
-  }, [forecast]);
+    if (lucroLiquido <= 0) list.push("Seu lucro líquido ainda não ficou positivo este mês.");
+    if ((reservePot?.balance ?? 0) <= monthTotals.netIncome * 0.1) list.push("Sua reserva ainda está fraca.");
+    if (monthTotals.expense > monthTotals.netIncome * 0.5) list.push("Você gastou mais que o normal aqui.");
+    if (list.length === 0) list.push("Seu caixa está organizado. Continua registrando tudo.");
+    return list;
+  }, [hasRealIncome, lucroLiquido, monthTotals.expense, monthTotals.netIncome, reservePot?.balance]);
 
-  const monthlyInsights = useMemo(() => {
-    if (monthlyComparison.rows.length < 2) return null;
-    return [
-      `Este mes sua receita esta ${formatPercentage(monthlyComparison.incomeVariationPct)} em relacao ao mes anterior.`,
-      `Suas despesas variaram ${formatPercentage(monthlyComparison.expenseVariationPct)} no mesmo periodo.`,
-      `Lucro liquido mensal: ${formatPercentage(monthlyComparison.netVariationPct)} vs mes anterior.`,
-    ];
-  }, [monthlyComparison]);
+  const checkup = [
+    "Alguém ainda não te pagou?",
+    "Você gastou mais do que queria?",
+    "Semana que vem tá controlada?",
+  ];
 
   return (
-    <section className="fd-finance-section">
-      <header className="fd-finance-titleblock">
-        <h2 className="fd-finance-title">Fluxo de Caixa</h2>
-        <p className="fd-finance-subtitle">Leitura consolidada de entradas e saidas com dados reativos</p>
+    <section className="fd-cash-page">
+      <header className="fd-cash-header">
+        <div>
+          <span>Fluxo de caixa</span>
+          <h2>Dinheiro real</h2>
+          <p>Isso aqui é só o que já entrou de verdade.</p>
+        </div>
+        <div className="fd-cash-month">
+          <CalendarDays className="h-4 w-4" />
+          {monthLabel()}
+        </div>
       </header>
 
-      <article className="fd-panel fd-glass fd-forecast-card">
-        <div className="fd-forecast-head">
+      <section className="fd-cash-hero-grid">
+        <article className="fd-cash-control-card">
           <div>
-            <h3>Projecao dos proximos dias</h3>
-            <p>Estimativa baseada na sua media de entradas e despesas cadastradas.</p>
+            <span className="fd-cash-kicker">
+              <ShieldCheck className="h-4 w-4" />
+              Seu controle hoje
+            </span>
+            {hasRealIncome ? (
+              <>
+                <h3>Você está no caminho certo</h3>
+                <p>Seu caixa está sendo calculado com entradas reais, taxas e custos cadastrados.</p>
+              </>
+            ) : (
+              <>
+                <h3>Ainda não da pra analisar</h3>
+                <p>Coloca sua primeira entrada e eu te mostro tudo.</p>
+              </>
+            )}
           </div>
-          <div className="fd-forecast-periods">
-            {[30, 60, 90].map((days) => (
-              <button
-                key={days}
-                type="button"
-                className={`fd-mini-btn ${forecastDays === days ? "active" : ""}`}
-                onClick={() => setForecastDays(days as 30 | 60 | 90)}
-              >
-                {days} dias
-              </button>
+          <div className="fd-cash-control-number">
+            <small>Lucro líquido</small>
+            <strong>{formatCurrency(lucroLiquido)}</strong>
+          </div>
+        </article>
+
+        <article className="fd-cash-note-card">
+          <strong>Regra de ouro</strong>
+          <p>Meta mensal não e dinheiro real. Ela não entra em saldo, lucro, caixa ou potes.</p>
+        </article>
+      </section>
+
+      <section className="fd-cash-metrics">
+        <MetricCard
+          label="Entrou"
+          value={formatCurrency(monthTotals.income)}
+          helper={hasRealIncome ? "Dinheiro recebido de verdade" : "Nada entrou ainda"}
+          tone="success"
+          icon={ArrowDownCircle}
+        />
+        <MetricCard
+          label="Saiu"
+          value={formatCurrency(monthTotals.expense)}
+          helper="Saídas registradas no caixa"
+          tone="danger"
+          icon={ArrowUpCircle}
+        />
+        <MetricCard
+          label="Lucro líquido"
+          value={formatCurrency(lucroLiquido)}
+          helper="O que realmenté sóbrou depois das taxas e custos"
+          tone={lucroLiquido < 0 ? "danger" : "success"}
+          icon={CircleDollarSign}
+        />
+        <MetricCard
+          label="Pode usar"
+          value={formatCurrency(podeUsar)}
+          helper={hasRealIncome ? "Esse valor você pode usar sem bagunçar seu plano" : "Registre entradas pra liberar dinheiro aqui"}
+          tone="info"
+          icon={HandCoins}
+        />
+      </section>
+
+      <section className="fd-cash-grid-main">
+        <article className="fd-cash-panel fd-cash-chart-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Seu dinheiro nos ultimos dias</h3>
+              <p>So aparece aqui o que entrou ou saiu de verdade.</p>
+            </div>
+          </div>
+          {dailySeries.length === 0 ? (
+            <div className="fd-cash-empty">
+              <TrendingUp className="h-8 w-8" />
+              <strong>Nada registrado ainda</strong>
+              <p>Começa colocando sua primeira entrada.</p>
+            </div>
+          ) : (
+            <FlowBarsChart data={dailySeries} />
+          )}
+        </article>
+
+        <article className="fd-cash-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Não mistura seu dinheiro</h3>
+              <p>O dinheiro do trabalho não e todo seu ainda.</p>
+            </div>
+          </div>
+          <div className="fd-cash-split">
+            <div>
+              <BriefcaseBusiness className="h-5 w-5" />
+              <span>Negocio</span>
+              <strong>{formatCurrency(businessPot?.balance ?? 0)}</strong>
+              <small>De onde vem o dinheiro</small>
+            </div>
+            <div>
+              <WalletCards className="h-5 w-5" />
+              <span>Pessoal</span>
+              <strong>{formatCurrency(personalPot?.balance ?? 0)}</strong>
+              <small>De onde sai sua vida</small>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section className="fd-cash-panel">
+        <div className="fd-cash-panel-head">
+          <div>
+            <h3>Separe isso antes de gastar</h3>
+            <p>Valores reais ou zero quando ainda não existe registro.</p>
+          </div>
+        </div>
+        <div className="fd-cash-provisions">
+          <div>
+            <PiggyBank className="h-5 w-5" />
+            <span>Reserva</span>
+            <strong>{formatCurrency(reservePot?.balance ?? 0)}</strong>
+            <small>Dinheiro que te protege</small>
+          </div>
+          <div>
+            <Landmark className="h-5 w-5" />
+            <span>Imposto</span>
+            <strong>{formatCurrency(taxProvision)}</strong>
+            <small>Imposto (não esquece disso)</small>
+          </div>
+          <div>
+            <CalendarDays className="h-5 w-5" />
+            <span>Ferias</span>
+            <strong>{formatCurrency(vacationProvision)}</strong>
+            <small>Pra parar sem preocupacao</small>
+          </div>
+          <div>
+            <TrendingUp className="h-5 w-5" />
+            <span>Investimento</span>
+            <strong>{formatCurrency(investmentProvision)}</strong>
+            <small>Pra crescer mais</small>
+          </div>
+        </div>
+      </section>
+
+      <section className="fd-cash-grid-main">
+        <article className="fd-cash-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Organize simples</h3>
+              <p>Quatro grupos para entender seu caixa sem complicar.</p>
+            </div>
+          </div>
+          <div className="fd-cash-categories">
+            <div>
+              <ArrowDownCircle className="h-5 w-5" />
+              <span>Entrou</span>
+              <strong>{formatCurrency(monthTotals.income)}</strong>
+              <small>Servico ou venda</small>
+            </div>
+            <div>
+              <BriefcaseBusiness className="h-5 w-5" />
+              <span>Custos</span>
+              <strong>{formatCurrency(totalCosts)}</strong>
+              <small>Pra trabalhar</small>
+            </div>
+            <div>
+              <TrendingUp className="h-5 w-5" />
+              <span>Investimento</span>
+              <strong>{formatCurrency(investmentProvision)}</strong>
+              <small>Crescimento</small>
+            </div>
+            <div>
+              <HandCoins className="h-5 w-5" />
+              <span>Seu salario</span>
+              <strong>{formatCurrency(podeUsar)}</strong>
+              <small>Retirada segura</small>
+            </div>
+          </div>
+        </article>
+
+        <article className="fd-cash-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Fica de olho</h3>
+              <p>Alertas simples para não perder o controle.</p>
+            </div>
+          </div>
+          <div className="fd-cash-alerts">
+            {alerts.map((alert) => (
+              <div key={alert}>
+                {alert.includes("organizado") ? <CheckCircle2 className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
+                <p>{alert}</p>
+              </div>
             ))}
           </div>
-        </div>
+        </article>
+      </section>
 
-        <div className={`fd-forecast-alert ${riskMessage.level}`}>
-          {riskMessage.level === "critical" ? <AlertTriangle className="h-4 w-4" /> : null}
-          {riskMessage.level === "moderate" ? <Gauge className="h-4 w-4" /> : null}
-          {riskMessage.level === "positive" ? <CheckCircle2 className="h-4 w-4" /> : null}
-          {riskMessage.level === "empty" ? <CalendarRange className="h-4 w-4" /> : null}
-          <div>
-            <strong>{riskMessage.title}</strong>
-            <p>{riskMessage.subtitle}</p>
-          </div>
-        </div>
-
-        {forecast.dataSufficient ? (
-          <>
-            <div className="fd-forecast-kpis">
-              <div className="fd-insight-item">
-                <span>Saldo projetado ({forecast.periodDays} dias)</span>
-                <strong>{formatCurrency(forecast.projectedBalance)}</strong>
-              </div>
-              <div className="fd-insight-item">
-                <span>Melhor cenario estimado</span>
-                <strong>{formatCurrency(forecast.bestCaseBalance)}</strong>
-              </div>
-              <div className="fd-insight-item">
-                <span>Cenario conservador</span>
-                <strong>{formatCurrency(forecast.conservativeBalance)}</strong>
-              </div>
-              <div className="fd-insight-item">
-                <span>Data provavel de risco</span>
-                <strong>{forecast.riskDate ? formatDate(forecast.riskDate) : "Sem risco no periodo"}</strong>
-              </div>
+      <section className="fd-cash-grid-main">
+        <article className="fd-cash-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Confere isso aqui rapidinho</h3>
+              <p>Um check-up curto antes de tomar decisão.</p>
             </div>
-            <ForecastLineChart points={forecast.points} />
-          </>
-        ) : (
-          <div className="fd-empty-state-card">
-            <p>Cadastre algumas entradas e saidas para liberar sua projecao de caixa.</p>
           </div>
-        )}
-      </article>
-
-      <div className="fd-grid-two">
-        <article className="fd-panel fd-glass fd-finance-primary-card">
-          <div className="fd-flow-columns">
-            <section className="fd-flow-column">
-              <div className="fd-flow-column-head">
-                <h3>Entradas</h3>
-                <strong className="positive">{formatCurrency(monthTotals.income)}</strong>
+          <div className="fd-cash-checkup">
+            {checkup.map((item) => (
+              <div key={item}>
+                <CheckCircle2 className="h-5 w-5" />
+                <span>{item}</span>
               </div>
-              <div className="fd-list">
-                {incomeRows.length === 0 ? (
-                  <p className="fd-empty">Sem entradas no periodo</p>
-                ) : (
-                  incomeRows.map((row) => (
-                    <div key={row.id} className="fd-list-row">
-                      <div>
-                        <p>{row.description}</p>
-                        <small>
-                          {formatDate(row.date)} - {row.category}
-                        </small>
-                      </div>
-                      <strong className="fd-positive">+{formatCurrency(row.amount)}</strong>
+            ))}
+          </div>
+        </article>
+
+        <article className="fd-cash-panel">
+          <div className="fd-cash-panel-head">
+            <div>
+              <h3>Movimentos recentes</h3>
+              <p>Nome, valor, data real e categoria.</p>
+            </div>
+          </div>
+          <div className="fd-cash-movements">
+            {recent.length === 0 ? (
+              <div className="fd-cash-empty compact">
+                <strong>Nada registrado ainda</strong>
+                <p>Suas entradas e saidas vao aparecer aqui.</p>
+              </div>
+            ) : (
+              recent.map((row) => {
+                const isIncome = row.type === TransactionType.INCOME;
+                return (
+                  <div key={row.id} className="fd-cash-movement-row">
+                    <span className={isIncome ? "income" : "expense"}>
+                      {isIncome ? <ArrowDownCircle className="h-4 w-4" /> : <ArrowUpCircle className="h-4 w-4" />}
+                    </span>
+                    <div>
+                      <p>{row.description}</p>
+                      <small>
+                        {formatDate(row.date)} - {row.category}
+                      </small>
                     </div>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section className="fd-flow-column">
-              <div className="fd-flow-column-head">
-                <h3>Saidas</h3>
-                <strong className="negative">{formatCurrency(monthTotals.expense)}</strong>
-              </div>
-              <div className="fd-list">
-                {expenseRows.length === 0 ? (
-                  <p className="fd-empty">Sem saidas no periodo</p>
-                ) : (
-                  expenseRows.map((row) => (
-                    <div key={row.id} className="fd-list-row">
-                      <div>
-                        <p>{row.description}</p>
-                        <small>
-                          {formatDate(row.date)} - {row.category}
-                        </small>
-                      </div>
-                      <strong className="fd-negative">-{formatCurrency(row.amount)}</strong>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-
-          <div className="fd-subsection">
-            <h3>Evolucao do fluxo</h3>
-            {chartRows.length === 0 ? <p className="fd-empty">Sem dados suficientes para o grafico</p> : <FlowBarsChart data={chartRows} />}
+                    <strong className={isIncome ? "income" : "expense"}>
+                      {isIncome ? "+" : "-"}
+                      {formatCurrency(isIncome ? getTransactionGrossAmount(row) : row.amount)}
+                    </strong>
+                  </div>
+                );
+              })
+            )}
           </div>
         </article>
-
-        <article className="fd-panel fd-glass">
-          <div className="fd-panel-head">
-            <h2>Painel analitico</h2>
-            <p>Resumo financeiro consolidado</p>
-          </div>
-
-          <div className="fd-insights-grid">
-            <div className="fd-insight-item">
-              <span>Entradas</span>
-              <strong>{formatCurrency(monthTotals.income)}</strong>
-            </div>
-            <div className="fd-insight-item">
-              <span>Saidas</span>
-              <strong>{formatCurrency(monthTotals.expense)}</strong>
-            </div>
-            <div className="fd-insight-item">
-              <span>Saldo do periodo</span>
-              <strong>{formatCurrency(monthTotals.periodBalance)}</strong>
-            </div>
-            <div className="fd-insight-item">
-              <span>Dia com maior faturamento</span>
-              <strong>{bestDay ? `${bestDay.date} - ${formatCurrency(bestDay.value)}` : "-"}</strong>
-            </div>
-            <div className="fd-insight-item">
-              <span>Dia mais fraco</span>
-              <strong>{worstDay ? `${worstDay.date} - ${formatCurrency(worstDay.value)}` : "-"}</strong>
-            </div>
-            <div className="fd-insight-item">
-              <span>Total de custos</span>
-              <strong>{formatCurrency(totalCosts)}</strong>
-            </div>
-          </div>
-
-          <div className="fd-subsection">
-            <h3>Distribuicao financeira</h3>
-            <AnalyticsDonut income={monthTotals.income} expense={monthTotals.expense} costs={totalCosts} />
-          </div>
-        </article>
-      </div>
-
-      <article className="fd-panel fd-glass fd-monthly-comparison-card">
-        <div className="fd-panel-head">
-          <h2>Comparativo mensal</h2>
-          <p>Receitas, despesas e saldo liquido dos ultimos meses</p>
-        </div>
-        {monthlyComparison.rows.length === 0 ? (
-          <div className="fd-empty-state-card">
-            <p>Quando voce tiver mais historico, o FluxoCerto vai comparar seus meses automaticamente.</p>
-          </div>
-        ) : (
-          <>
-            <MonthlyComparisonChart rows={monthlyComparison.rows} />
-            {monthlyInsights ? (
-              <div className="fd-monthly-insights">
-                {monthlyInsights.map((insight) => (
-                  <p key={insight}>
-                    <TrendingUp className="h-4 w-4" />
-                    <span>{insight}</span>
-                  </p>
-                ))}
-              </div>
-            ) : null}
-          </>
-        )}
-      </article>
-
-      {riskLevel === "empty" ? (
-        <article className="fd-panel fd-glass fd-empty-state-card">
-          <p>Cadastre algumas entradas e saidas para liberar sua projecao de caixa.</p>
-        </article>
-      ) : null}
+      </section>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Account,
@@ -19,9 +19,12 @@ import {
   PaymentFeeSetting,
   Pot,
   PotType,
+  ProductItem,
   SalesItem,
   ScreenType,
   Service,
+  ServiceSupplyLink,
+  SupplyItem,
   Transaction,
   TransactionInput,
   TransactionType,
@@ -40,18 +43,34 @@ import {
   SERVICES,
 } from "@/lib/constants";
 import {
+  AuthService,
   bootstrapAuthUsers,
   clearUserOnboardingData,
   clearAuthSession,
-  getUserOnboardingData,
   persistAuthSession,
-  restoreAuthSession,
   updateAuthUserProfile,
 } from "@/lib/auth";
+import { hasSupabaseConfig } from "@/lib/supabaseClient";
+import {
+  getClients as getSupabaseClients,
+  getCosts as getSupabaseCosts,
+  getPots as getSupabasePots,
+  getTransactions as getSupabaseTransactions,
+  deleteClient as deleteSupabaseClient,
+  deleteCost as deleteSupabaseCost,
+  insertClient as insertSupabaseClient,
+  insertCost as insertSupabaseCost,
+  insertTransaction as insertSupabaseTransaction,
+  upsertClients as upsertSupabaseClients,
+  upsertCosts as upsertSupabaseCosts,
+  upsertPots as upsertSupabasePots,
+  upsertTransactions as upsertSupabaseTransactions,
+} from "@/lib/supabaseRepositories";
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const USER_DATA_KEY_PREFIX = "fc360:data:";
+const SUPABASE_MIGRATION_KEY_PREFIX = "fc360:supabase:migrated:";
 
 type UserScopedData = {
   accounts: Account[];
@@ -65,6 +84,9 @@ type UserScopedData = {
   achievements: Achievement[];
   salesItems: SalesItem[];
   costs: Cost[];
+  supplies: SupplyItem[];
+  products: ProductItem[];
+  serviceSupplyLinks: ServiceSupplyLink[];
   paymentFeeSettings: PaymentFeeSetting[];
   adjustmentAccounts: AdjustmentAccount[];
   potDistribution: PotDistribution;
@@ -317,6 +339,9 @@ function createEmptyData(): UserScopedData {
     achievements: [] as Achievement[],
     salesItems: [] as SalesItem[],
     costs: [] as Cost[],
+    supplies: [] as SupplyItem[],
+    products: [] as ProductItem[],
+    serviceSupplyLinks: [] as ServiceSupplyLink[],
     paymentFeeSettings: buildDefaultPaymentFees(),
     adjustmentAccounts: [] as AdjustmentAccount[],
     potDistribution: distribution,
@@ -327,6 +352,15 @@ function attachOwner<T extends { ownerId?: string }>(items: T[], ownerId: string
   return items
     .filter((item) => !item.ownerId || item.ownerId === ownerId)
     .map((item) => ({ ...item, ownerId }));
+}
+
+function isOnboardingSeedTransaction(transaction: Transaction) {
+  return (
+    transaction.notes === "onboarding-seed-income" ||
+    (transaction.origin === "Onboarding" &&
+      transaction.category === "onboarding" &&
+      transaction.description === "Saldo inicial configurado no onboarding")
+  );
 }
 
 function getTransactionMovementAmount(transaction: Transaction) {
@@ -392,14 +426,18 @@ function normalizeOwnedData(userId: string, data: UserScopedData): UserScopedDat
     goalValue: Number.isFinite(pot.goalValue) ? pot.goalValue : clampCurrency(pot.limit ?? 0),
     limit: clampCurrency(pot.limit ?? pot.goalValue ?? 0),
   }));
-  const normalizedTransactions = attachOwner(data.transactions, userId).map((transaction) => {
-    if (transaction.type !== TransactionType.INCOME) return transaction;
-    return {
-      ...transaction,
-      ...normalizeStoredIncomeAmounts(transaction, paymentFeeSettings),
-    };
-  });
-  const rebuilt = normalizedTransactions.length
+  const ownedTransactions = attachOwner(data.transactions, userId);
+  const hadOnboardingSeed = ownedTransactions.some(isOnboardingSeedTransaction);
+  const normalizedTransactions = ownedTransactions
+    .filter((transaction) => !isOnboardingSeedTransaction(transaction))
+    .map((transaction) => {
+      if (transaction.type !== TransactionType.INCOME) return transaction;
+      return {
+        ...transaction,
+        ...normalizeStoredIncomeAmounts(transaction, paymentFeeSettings),
+      };
+    });
+  const rebuilt = normalizedTransactions.length || hadOnboardingSeed
     ? rebuildFinancialBalances(normalizedAccounts, normalizedPots, normalizedTransactions, distribution)
     : { accounts: normalizedAccounts, pots: normalizedPots };
 
@@ -415,6 +453,9 @@ function normalizeOwnedData(userId: string, data: UserScopedData): UserScopedDat
     achievements: attachOwner(data.achievements, userId),
     salesItems: attachOwner(data.salesItems, userId),
     costs: attachOwner(data.costs, userId),
+    supplies: attachOwner(data.supplies, userId),
+    products: attachOwner(data.products, userId),
+    serviceSupplyLinks: attachOwner(data.serviceSupplyLinks, userId),
     paymentFeeSettings,
     adjustmentAccounts: attachOwner(data.adjustmentAccounts, userId),
     potDistribution: distribution,
@@ -441,6 +482,9 @@ function loadUserScopedData(userId: string): UserScopedData | null {
       achievements: parsed.achievements ?? fallback.achievements,
       salesItems: parsed.salesItems ?? fallback.salesItems,
       costs: parsed.costs ?? fallback.costs,
+      supplies: parsed.supplies ?? fallback.supplies,
+      products: parsed.products ?? fallback.products,
+      serviceSupplyLinks: parsed.serviceSupplyLinks ?? fallback.serviceSupplyLinks,
       paymentFeeSettings: parsed.paymentFeeSettings ?? fallback.paymentFeeSettings,
       adjustmentAccounts: parsed.adjustmentAccounts ?? fallback.adjustmentAccounts,
       potDistribution: normalizePotDistribution(parsed.potDistribution),
@@ -448,6 +492,29 @@ function loadUserScopedData(userId: string): UserScopedData | null {
   } catch {
     return null;
   }
+}
+
+function getSupabaseMigrationKey(userId: string) {
+  return `${SUPABASE_MIGRATION_KEY_PREFIX}${userId}`;
+}
+
+function hasMigratedToSupabase(userId: string) {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(getSupabaseMigrationKey(userId)) === "true";
+}
+
+function markMigratedToSupabase(userId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(getSupabaseMigrationKey(userId), "true");
+}
+
+function hasLocalFinancialData(data: UserScopedData) {
+  return (
+    data.transactions.length > 0 ||
+    data.clients.length > 0 ||
+    data.costs.length > 0 ||
+    data.pots.some((pot) => Math.abs(pot.balance) > 0 || Math.abs(pot.goalValue ?? 0) > 0 || Math.abs(pot.limit ?? 0) > 0)
+  );
 }
 
 function buildInitialTransactions(costs: Cost[]): Transaction[] {
@@ -503,32 +570,32 @@ function resolvePotByType(type: TransactionType, availablePots: Pot[]) {
 
 function validateTransactionInput(transaction: TransactionInput) {
   if (![TransactionType.INCOME, TransactionType.EXPENSE].includes(transaction.type)) {
-    return "Tipo de transacao invalido";
+    return "Tipo de transação inválido";
   }
-  if (!transaction.description?.trim()) return "Descricao obrigatoria";
-  if (!transaction.category?.trim()) return "Categoria obrigatoria";
+  if (!transaction.description?.trim()) return "Descrição obrigatória";
+  if (!transaction.category?.trim()) return "Categoria obrigatória";
 
   const amount = Number(transaction.amount);
   if (!Number.isFinite(amount) || amount <= 0) return "Valor deve ser maior que zero";
 
-  if (!transaction.date || Number.isNaN(new Date(transaction.date).getTime())) return "Data invalida";
+  if (!transaction.date || Number.isNaN(new Date(transaction.date).getTime())) return "Data inválida";
   if (!transaction.account?.trim()) return "Conta obrigatoria";
   return null;
 }
 
 function validateServiceInput(service: Omit<Service, "id"> & { id?: string }) {
-  if (!service.name?.trim()) return "Nome do servico e obrigatorio";
-  if (!service.description?.trim()) return "Descricao do servico e obrigatoria";
-  if (!Number.isFinite(service.price) || service.price <= 0) return "Valor do servico invalido";
-  if (!Number.isFinite(service.duration) || service.duration <= 0) return "Duracao do servico invalida";
+  if (!service.name?.trim()) return "Nome do serviço é obrigatório";
+  if (!service.description?.trim()) return "Descrição do serviço é obrigatória";
+  if (!Number.isFinite(service.price) || service.price <= 0) return "Valor do serviço inválido";
+  if (!Number.isFinite(service.duration) || service.duration <= 0) return "Duração do serviço inválida";
   return null;
 }
 
 function validateCostInput(cost: Omit<Cost, "id"> & { id?: string }) {
-  if (!cost.name?.trim()) return "Nome do custo e obrigatorio";
-  if (!cost.category?.trim()) return "Categoria obrigatoria";
-  if (!Number.isFinite(cost.amount) || cost.amount <= 0) return "Valor do custo invalido";
-  if (!cost.date || Number.isNaN(new Date(cost.date).getTime())) return "Data invalida";
+  if (!cost.name?.trim()) return "Nome do custo é obrigatório";
+  if (!cost.category?.trim()) return "Categoria obrigatória";
+  if (!Number.isFinite(cost.amount) || cost.amount <= 0) return "Valor do custo inválido";
+  if (!cost.date || Number.isNaN(new Date(cost.date).getTime())) return "Data inválida";
   return null;
 }
 
@@ -547,9 +614,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [achievements, setAchievements] = useState<Achievement[]>(baseData.achievements);
   const [salesItems, setSalesItems] = useState<SalesItem[]>(baseData.salesItems);
   const [costs, setCosts] = useState<Cost[]>(baseData.costs);
+  const [supplies, setSupplies] = useState<SupplyItem[]>(baseData.supplies);
+  const [products, setProducts] = useState<ProductItem[]>(baseData.products);
+  const [serviceSupplyLinks, setServiceSupplyLinks] = useState<ServiceSupplyLink[]>(baseData.serviceSupplyLinks);
   const [paymentFeeSettings, setPaymentFeeSettings] = useState<PaymentFeeSetting[]>(baseData.paymentFeeSettings);
   const [adjustmentAccounts, setAdjustmentAccounts] = useState<AdjustmentAccount[]>(baseData.adjustmentAccounts);
   const [potDistribution, setPotDistributionState] = useState<PotDistribution>(baseData.potDistribution);
+  const [isSupabaseSyncReady, setIsSupabaseSyncReady] = useState(false);
+  const isSupabaseHydratingRef = useRef(false);
+  const lastSupabaseSyncSignatureRef = useRef("");
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   const unlockAchievement = useCallback(
@@ -608,16 +681,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAchievements(nextData.achievements);
     setSalesItems(nextData.salesItems);
     setCosts(nextData.costs);
+    setSupplies(nextData.supplies);
+    setProducts(nextData.products);
+    setServiceSupplyLinks(nextData.serviceSupplyLinks);
     setPaymentFeeSettings(nextData.paymentFeeSettings);
     setAdjustmentAccounts(nextData.adjustmentAccounts);
     setPotDistributionState(nextData.potDistribution);
   }, []);
+
+  const hydrateSupabaseFinancialData = useCallback(
+    async (nextUser: User, localData: UserScopedData) => {
+      if (!hasSupabaseConfig) {
+        setIsSupabaseSyncReady(false);
+        return;
+      }
+
+      isSupabaseHydratingRef.current = true;
+      setIsSupabaseSyncReady(false);
+
+      try {
+        const [remoteTransactions, remotePots, remoteClients, remoteCosts] = await Promise.all([
+          getSupabaseTransactions(nextUser.id),
+          getSupabasePots(nextUser.id),
+          getSupabaseClients(nextUser.id),
+          getSupabaseCosts(nextUser.id),
+        ]);
+
+        const remoteHasData = Boolean(
+          (remoteTransactions.data?.length ?? 0) > 0 ||
+            (remotePots.data?.length ?? 0) > 0 ||
+            (remoteClients.data?.length ?? 0) > 0 ||
+            (remoteCosts.data?.length ?? 0) > 0
+        );
+
+        if (remoteHasData) {
+          const nextData: UserScopedData = {
+            ...localData,
+            transactions: remoteTransactions.error ? localData.transactions : remoteTransactions.data ?? [],
+            pots: remotePots.error ? localData.pots : remotePots.data ?? [],
+            clients: remoteClients.error ? localData.clients : remoteClients.data ?? [],
+            costs: remoteCosts.error ? localData.costs : remoteCosts.data ?? [],
+          };
+          applyUserData(normalizeOwnedData(nextUser.id, nextData));
+          markMigratedToSupabase(nextUser.id);
+          return;
+        }
+
+        if (!hasMigratedToSupabase(nextUser.id) && hasLocalFinancialData(localData)) {
+          await Promise.all([
+            upsertSupabaseTransactions(localData.transactions, nextUser.id),
+            upsertSupabasePots(localData.pots, nextUser.id),
+            upsertSupabaseClients(localData.clients, nextUser.id),
+            upsertSupabaseCosts(localData.costs, nextUser.id),
+          ]);
+        }
+
+        markMigratedToSupabase(nextUser.id);
+      } catch {
+        // Supabase is additive in this phase. Local storage remains the source of continuity on any sync failure.
+      } finally {
+        isSupabaseHydratingRef.current = false;
+        setIsSupabaseSyncReady(true);
+      }
+    },
+    [applyUserData]
+  );
 
   const setUser = useCallback(
     (nextUser: User | null) => {
       setUserState(nextUser);
 
       if (!nextUser) {
+        setIsSupabaseSyncReady(false);
+        lastSupabaseSyncSignatureRef.current = "";
         clearAuthSession();
         applyUserData(createEmptyData());
         return;
@@ -632,9 +768,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const userData = loadUserScopedData(nextUser.id) ?? createEmptyData();
       applyUserData(normalizeOwnedData(nextUser.id, userData));
+      void hydrateSupabaseFinancialData(nextUser, userData);
       updateAuthUserProfile(nextUser);
     },
-    [applyUserData, user?.id]
+    [applyUserData, hydrateSupabaseFinancialData, user?.id]
   );
 
   const goScreen = useCallback((screen: ScreenType) => {
@@ -642,22 +779,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [applyUserData]);
 
   useEffect(() => {
-    bootstrapAuthUsers();
-    const session = restoreAuthSession();
+    let cancelled = false;
 
-    if (!session) {
-      setCurrentScreen(ScreenType.LANDING);
+    bootstrapAuthUsers();
+
+    async function restoreSession() {
+      const session = await AuthService.getCurrentUser();
+
+      if (cancelled) return;
+
+      if (!session) {
+        setCurrentScreen(ScreenType.LANDING);
+        setIsAuthChecking(false);
+        return;
+      }
+
+      setUserState(session.user);
+      const userData = loadUserScopedData(session.user.id) ?? createEmptyData();
+      applyUserData(normalizeOwnedData(session.user.id, userData));
+      void hydrateSupabaseFinancialData(session.user, userData);
+
+      setCurrentScreen(session.onboardingCompleted ? ScreenType.DASHBOARD : ScreenType.ONBOARDING);
       setIsAuthChecking(false);
-      return;
     }
 
-    setUserState(session.user);
-    const userData = loadUserScopedData(session.user.id) ?? createEmptyData();
-    applyUserData(normalizeOwnedData(session.user.id, userData));
+    void restoreSession();
 
-    setCurrentScreen(session.onboardingCompleted ? ScreenType.DASHBOARD : ScreenType.ONBOARDING);
-    setIsAuthChecking(false);
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [applyUserData, hydrateSupabaseFinancialData]);
 
   useEffect(() => {
     if (!user || typeof window === "undefined") return;
@@ -673,6 +824,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       achievements,
       salesItems,
       costs,
+      supplies,
+      products,
+      serviceSupplyLinks,
       paymentFeeSettings,
       adjustmentAccounts,
       potDistribution,
@@ -691,10 +845,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     achievements,
     salesItems,
     costs,
+    supplies,
+    products,
+    serviceSupplyLinks,
     paymentFeeSettings,
     adjustmentAccounts,
     potDistribution,
   ]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !user?.id || !isSupabaseSyncReady || isSupabaseHydratingRef.current) return;
+
+    const signature = JSON.stringify({
+      userId: user.id,
+      transactions,
+      pots,
+      clients,
+      costs,
+    });
+
+    if (signature === lastSupabaseSyncSignatureRef.current) return;
+    lastSupabaseSyncSignatureRef.current = signature;
+
+    void Promise.all([
+      upsertSupabaseTransactions(transactions, user.id),
+      upsertSupabasePots(pots, user.id),
+      upsertSupabaseClients(clients, user.id),
+      upsertSupabaseCosts(costs, user.id),
+    ]).catch(() => {
+      // Local persistence remains the fallback if Supabase is temporarily unavailable.
+    });
+  }, [clients, costs, isSupabaseSyncReady, pots, transactions, user?.id]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -725,13 +906,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [unlockAchievement, user?.createdAt, user?.id]);
 
   const logout = useCallback(() => {
+    void AuthService.logout();
     setUser(null);
     setCurrentScreen(ScreenType.LANDING);
   }, []);
 
   const addTransaction = useCallback((transactionInput: TransactionInput) => {
     if (!user?.id) {
-      return { ok: false, error: "Usuario nao autenticado" };
+      return { ok: false, error: "Usuário não autenticado" };
     }
     const validationError = validateTransactionInput(transactionInput);
     if (validationError) {
@@ -757,6 +939,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     setTransactions((prev) => [transaction, ...prev]);
+    if (hasSupabaseConfig) {
+      void insertSupabaseTransaction(transaction);
+    }
 
     setAccounts((prev) =>
       prev.map((account) =>
@@ -870,13 +1055,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyOnboardingIncome = useCallback((usageMode: OnboardingUsageMode, monthlyIncome: number) => {
-    if (!user?.id) return;
-    const safeIncome = clampCurrency(monthlyIncome);
+    void monthlyIncome;
     const blueprint = getOnboardingPotBlueprint(usageMode);
     const distribution = blueprint.distribution;
-    const personalBalance = clampCurrency((safeIncome * distribution.personal) / 100);
-    const businessBalance = clampCurrency((safeIncome * distribution.business) / 100);
-    const reserveBalance = clampCurrency(safeIncome - personalBalance - businessBalance);
 
     setPotDistributionState(distribution);
     setPots((prev) =>
@@ -886,10 +1067,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...pot,
             name: blueprint.personal.name,
             icon: blueprint.personal.icon,
-            balance: personalBalance,
             percentage: distribution.personal,
-            goalValue: safeIncome,
-            limit: safeIncome,
           };
         }
         if (pot.type === PotType.BUSINESS) {
@@ -897,10 +1075,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...pot,
             name: blueprint.business.name,
             icon: blueprint.business.icon,
-            balance: businessBalance,
             percentage: distribution.business,
-            goalValue: clampCurrency(safeIncome * 2),
-            limit: clampCurrency(safeIncome * 2),
           };
         }
         if (pot.type === PotType.RESERVE) {
@@ -908,53 +1083,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...pot,
             name: blueprint.reserve.name,
             icon: blueprint.reserve.icon,
-            balance: reserveBalance,
             percentage: distribution.reserve,
-            goalValue: clampCurrency(safeIncome * 3),
-            limit: clampCurrency(safeIncome * 3),
           };
         }
         return pot;
       })
     );
-
-    setAccounts((prev) =>
-      prev.map((account, index) => {
-        if (index === 0) return { ...account, balance: safeIncome };
-        if (index === 1) return { ...account, balance: reserveBalance };
-        return account;
-      })
-    );
-
-    const seedTransaction: Transaction = {
-      id: createId("tx"),
-      ownerId: user.id,
-      type: TransactionType.INCOME,
-      description: "Saldo inicial configurado no onboarding",
-      amount: safeIncome,
-      date: todayIso(),
-      category: "onboarding",
-      account: "Conta Corrente",
-      origin: "Onboarding",
-      notes: "onboarding-seed-income",
-      potId: "pot-001",
-    };
-    setTransactions((prev) => {
-      const next = prev.filter((tx) => tx.notes !== "onboarding-seed-income");
-      return [seedTransaction, ...next];
-    });
-  }, [user?.id]);
+  }, []);
 
   useEffect(() => {
     if (!user?.id) return;
 
-    const onboardingIncome = getUserOnboardingData(user.id).monthlyIncome;
-    const inferredIncome = calculateAverageMonthlyIncome(transactions);
-    const referenceIncome = clampCurrency(
-      typeof onboardingIncome === "number" && Number.isFinite(onboardingIncome) && onboardingIncome > 0
-        ? onboardingIncome
-        : inferredIncome
-    );
+    const inferredIncome = calculateAverageMonthlyIncome(transactions.filter((tx) => !isOnboardingSeedTransaction(tx)));
+    const referenceIncome = clampCurrency(inferredIncome);
 
     setPots((prev) => {
       let changed = false;
@@ -1025,12 +1166,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addOnboardingDebt = useCallback(
     (debt: OnboardingDebtInput, usageMode: OnboardingUsageMode) => {
-      if (!user?.id) return { ok: false, error: "Usuario nao autenticado" };
+      if (!user?.id) return { ok: false, error: "Usuário não autenticado" };
 
       const totalAmount = clampCurrency(debt.totalAmount);
       const monthlyPayment = clampCurrency(debt.monthlyPayment);
-      if (!debt.name.trim()) return { ok: false, error: "Nome da divida obrigatorio" };
-      if (totalAmount <= 0 || monthlyPayment <= 0) return { ok: false, error: "Valores invalidos" };
+      if (!debt.name.trim()) return { ok: false, error: "Nome da dívida obrigatório" };
+      if (totalAmount <= 0 || monthlyPayment <= 0) return { ok: false, error: "Valores inválidos" };
 
       const installmentsTotal = Math.max(1, Math.ceil(totalAmount / monthlyPayment));
       const due = new Date();
@@ -1092,12 +1233,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addOnboardingFixedExpense = useCallback(
     (expense: OnboardingFixedExpenseInput, usageMode: OnboardingUsageMode) => {
-      if (!user?.id) return { ok: false, error: "Usuario nao autenticado" };
+      if (!user?.id) return { ok: false, error: "Usuário não autenticado" };
       const amount = clampCurrency(expense.amount);
       const dueDate = expense.dueDate;
-      if (!expense.name.trim()) return { ok: false, error: "Nome da despesa obrigatorio" };
+      if (!expense.name.trim()) return { ok: false, error: "Nome da despesa obrigatório" };
       if (amount <= 0 || Number.isNaN(new Date(dueDate).getTime())) {
-        return { ok: false, error: "Dados invalidos da despesa fixa" };
+        return { ok: false, error: "Dados inválidos da despesa fixa" };
       }
 
       const due = new Date(dueDate);
@@ -1141,7 +1282,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addService = useCallback((serviceInput: Omit<Service, "id"> & { id?: string }) => {
     if (!user?.id) {
-      return { ok: false, error: "Usuario nao autenticado" };
+      return { ok: false, error: "Usuário não autenticado" };
     }
     const validationError = validateServiceInput(serviceInput);
     if (validationError) {
@@ -1183,6 +1324,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
 
       setCosts((prev) => [cost, ...prev]);
+      if (hasSupabaseConfig) {
+        void insertSupabaseCost(cost);
+      }
       addTransaction({
         type: TransactionType.EXPENSE,
         description: cost.name,
@@ -1190,7 +1334,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         date: cost.date,
         category: cost.category,
         account: "Conta Corrente",
-        origin: "Ajustes",
+        origin: "cost",
+        source: "cost",
+        sourceId: cost.id,
         potId: "pot-002",
       });
 
@@ -1201,15 +1347,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteCost = useCallback((costId: string) => {
     setCosts((prev) => prev.filter((cost) => cost.id !== costId));
-  }, []);
+    if (hasSupabaseConfig && user?.id) {
+      void deleteSupabaseCost(costId, user.id);
+    }
+  }, [user?.id]);
 
   const addAdjustmentAccount = useCallback(
     (accountInput: Omit<AdjustmentAccount, "id" | "status" | "cycleMonthKey">) => {
-      if (!accountInput.name.trim()) return { ok: false, error: "Nome da conta e obrigatorio" };
+      if (!accountInput.name.trim()) return { ok: false, error: "Nome da conta é obrigatório" };
       if (!Number.isFinite(accountInput.amount) || accountInput.amount <= 0) {
-        return { ok: false, error: "Valor da conta invalido" };
+        return { ok: false, error: "Valor da conta inválido" };
       }
-      if (!accountInput.dueDate) return { ok: false, error: "Data de vencimento obrigatoria" };
+      if (!accountInput.dueDate) return { ok: false, error: "Data de vencimento obrigatória" };
 
       const totalInstallments =
         accountInput.type === "variavel" ? Math.max(1, accountInput.installmentsTotal ?? 1) : undefined;
@@ -1258,9 +1407,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let borrowed = false;
 
       const account = adjustmentAccounts.find((item) => item.id === accountId);
-      if (!account) return { ok: false, error: "Conta nao encontrada" };
+      if (!account) return { ok: false, error: "Conta não encontrada" };
       if (account.status === "pago" && account.type !== "fixa") {
-        return { ok: false, error: "Conta ja esta paga" };
+        return { ok: false, error: "Conta já está paga" };
       }
 
       const primaryPot = pots.find((pot) =>
@@ -1269,7 +1418,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : pot.type === PotType.BUSINESS || pot.name.toLowerCase().includes("neg")
       );
       const secondaryPot = pots.find((pot) => pot.id !== primaryPot?.id);
-      if (!primaryPot) return { ok: false, error: "Pote principal nao encontrado" };
+      if (!primaryPot) return { ok: false, error: "Pote principal não encontrado" };
 
       const amount = account.amount;
 
@@ -1298,7 +1447,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addTransaction({
           type: TransactionType.EXPENSE,
           amount: remaining,
-          description: `Emprestimo entre potes: ${account.name}`,
+          description: `Empréstimo entre potes: ${account.name}`,
           category: account.category,
           date: todayIso(),
           account: "Conta Corrente",
@@ -1338,7 +1487,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addClient = useCallback((client: Client) => {
     if (!user?.id) return;
-    setClients((prev) => [...prev, { ...client, ownerId: user?.id }]);
+    const nextClient = { ...client, ownerId: user.id };
+    setClients((prev) => [...prev, nextClient]);
+    if (hasSupabaseConfig) {
+      void insertSupabaseClient(nextClient);
+    }
   }, [user?.id]);
 
   const updateClient = useCallback((updatedClient: Client) => {
@@ -1347,11 +1500,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteClient = useCallback((clientId: string) => {
     setClients((prev) => prev.filter((client) => client.id !== clientId));
-  }, []);
+    if (hasSupabaseConfig && user?.id) {
+      void deleteSupabaseClient(clientId, user.id);
+    }
+  }, [user?.id]);
 
   const resetUserFinancialData = useCallback(() => {
     if (!user?.id) {
-      return { ok: false, error: "Usuario nao autenticado" };
+      return { ok: false, error: "Usuário não autenticado" };
     }
 
     clearUserOnboardingData(user.id);
@@ -1383,6 +1539,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     achievements,
     salesItems,
     costs,
+    supplies,
+    products,
+    serviceSupplyLinks,
     paymentFeeSettings,
     adjustmentAccounts,
     potDistribution,
@@ -1394,6 +1553,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteService,
     addCost,
     deleteCost,
+    setSupplies,
+    setProducts,
+    setServiceSupplyLinks,
     setPaymentFeeSettings,
     setPotDistribution,
     applyOnboardingUsageMode,

@@ -309,7 +309,7 @@ export default function TransactionModal({
 
   const saveServiceIncome = () => {
     if (!selectedService) {
-      toast.error("Selecione um servico para lancamento rapido");
+      toast.error("Selecione um serviço para lançamento rápido");
       return;
     }
 
@@ -618,8 +618,8 @@ export default function TransactionModal({
             </>
           ) : (
             <div className="fd-voice-fallback">
-              <p>Reconhecimento de voz nao disponivel neste navegador.</p>
-              <small>Voce pode continuar registrando manualmente normalmente.</small>
+              <p>Reconhecimento de voz não disponível neste navegador.</p>
+              <small>Você pode continuar registrando manualmente normalmente.</small>
             </div>
           )}
         </section>
@@ -629,7 +629,7 @@ export default function TransactionModal({
             <section className="fd-flow-panel">
               <div className="fd-flow-title">
                 <Sparkles className="h-4 w-4" />
-                <span>Lancamento rapido por servico</span>
+                <span>Lançamento rápido por serviço</span>
               </div>
 
               <div className="fd-chip-grid">
@@ -723,7 +723,7 @@ export default function TransactionModal({
                   <input
                     value={manualIncome.category}
                     onChange={(event) => setManualIncome((prev) => ({ ...prev, category: event.target.value }))}
-                    placeholder="Ex: servico, extra, comissao"
+                    placeholder="Ex: serviço, extra, comissão"
                   />
                 </label>
 

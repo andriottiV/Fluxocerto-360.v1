@@ -2,7 +2,8 @@ import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createFinanceRouter } from "./finance-api";
+import { createFinanceMockRouter } from "./finance-api.mock";
+import { createFluxAiRouter } from "./flux-ai-api";
 import { createFluxAgentRouter } from "./flux-agent-api";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,8 +13,11 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   app.use(express.json());
+  app.use("/api", createFluxAiRouter());
   app.use("/api", createFluxAgentRouter());
-  app.use("/api/v1", createFinanceRouter());
+  if (process.env.NODE_ENV !== "production") {
+    app.use("/api/v1", createFinanceMockRouter());
+  }
 
   // Serve static files from dist/public in production
   const staticPath =

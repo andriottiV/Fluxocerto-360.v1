@@ -7,15 +7,31 @@ import {
   UserStatus,
 } from "@/lib/types";
 import { canAccessAdmin, isAdmin } from "@/lib/authz";
+import { hasSupabaseConfig } from "@/lib/supabaseClient";
+import {
+  getCurrentSupabaseUser,
+  getProfile,
+  signInWithEmail,
+  signOutSupabase,
+  signUpWithEmail,
+  upsertProfile,
+} from "@/lib/supabaseRepositories";
 
 const AUTH_USERS_KEY = "fc360:auth:users:v2";
 const AUTH_SESSION_KEY = "fc360:auth:session:v1";
 const ONBOARDING_KEY_PREFIX = "fc360:onboarding:";
 const ONBOARDING_DATA_KEY_PREFIX = "fc360:onboarding:data:";
 const DEFAULT_ADMIN_EMAIL = "andriottidev@gmail.com";
+const LOCAL_PASSWORD_VERSION = "mvp-local-v1";
 
+// MVP/local auth service. This is intentionally isolated so the app can migrate
+// to Firebase/Supabase/backend auth without touching screens. It is not a
+// production identity provider; it only avoids storing plaintext passwords.
 type StoredAuthUser = User & {
-  password: string;
+  passwordHash: string;
+  passwordSalt: string;
+  passwordVersion: typeof LOCAL_PASSWORD_VERSION;
+  password?: string;
 };
 
 export type AuthResult = {
@@ -38,6 +54,14 @@ export type OnboardingData = {
   financialMode?: OnboardingFinancialMode;
   debts?: OnboardingDebtInput[];
   fixedExpenses?: OnboardingFixedExpenseInput[];
+  flag_separacao?: boolean;
+  focus?: "precificacao" | "seguranca" | null;
+  porcentagens?: {
+    negocio: number;
+    pessoal: number;
+    reserva: number;
+  };
+  metaMensal?: number;
 };
 
 function isBrowser() {
@@ -54,6 +78,51 @@ function nowIso() {
 
 function createUserId() {
   return `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createPasswordSalt() {
+  if (isBrowser() && window.crypto?.getRandomValues) {
+    const bytes = new Uint32Array(4);
+    window.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (item) => item.toString(36)).join("");
+  }
+
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function hashLocalPassword(password: string, salt: string) {
+  let hashA = 0x811c9dc5;
+  let hashB = 0x01000193;
+  const input = `${salt}:${password}`;
+
+  for (let round = 0; round < 1200; round += 1) {
+    for (let index = 0; index < input.length; index += 1) {
+      const code = input.charCodeAt(index) + round;
+      hashA ^= code;
+      hashA = Math.imul(hashA, 0x01000193);
+      hashB ^= code + hashA;
+      hashB = Math.imul(hashB, 0x85ebca6b);
+    }
+  }
+
+  return `${(hashA >>> 0).toString(36)}${(hashB >>> 0).toString(36)}`;
+}
+
+function createPasswordCredential(password: string) {
+  const passwordSalt = createPasswordSalt();
+  return {
+    passwordHash: hashLocalPassword(password, passwordSalt),
+    passwordSalt,
+    passwordVersion: LOCAL_PASSWORD_VERSION,
+  } as const;
+}
+
+function verifyPassword(stored: StoredAuthUser, password: string) {
+  if (stored.passwordHash && stored.passwordSalt) {
+    return hashLocalPassword(password, stored.passwordSalt) === stored.passwordHash;
+  }
+
+  return typeof stored.password === "string" && stored.password === password;
 }
 
 function parseAdminEmailsEnv() {
@@ -77,11 +146,39 @@ function roleAndStatusForEmail(email: string) {
 
 function defaultBusinessName(name?: string) {
   const safeName = name?.trim();
-  return safeName ? `${safeName} Negocio` : "Meu Negocio";
+  return safeName ? `${safeName} Negocio` : "Meu Negócio";
+}
+
+function buildAppUserFromSupabase(params: { id: string; email?: string | null; name?: string | null }): User {
+  const email = normalizeEmail(params.email ?? "");
+  const access = roleAndStatusForEmail(email);
+  const createdAt = nowIso();
+
+  // TODO: migrate roles/status to Supabase profiles or server-side claims.
+  return {
+    id: params.id,
+    name: params.name?.trim() || email.split("@")[0] || "Usuário",
+    email,
+    role: access.role,
+    status: access.status,
+    createdAt,
+    lastLoginAt: createdAt,
+    approvedAt: access.role === "admin" ? createdAt : undefined,
+    approvedBy: access.role === "admin" ? "system" : undefined,
+    phone: "",
+    businessName: defaultBusinessName(params.name ?? undefined),
+    businessType: "Servicos",
+  };
 }
 
 function toPublicUser(stored: StoredAuthUser): User {
-  const { password: _password, ...publicUser } = stored;
+  const {
+    password: _password,
+    passwordHash: _passwordHash,
+    passwordSalt: _passwordSalt,
+    passwordVersion: _passwordVersion,
+    ...publicUser
+  } = stored;
   return publicUser;
 }
 
@@ -89,12 +186,20 @@ function coerceUserShape(user: Partial<StoredAuthUser>): StoredAuthUser {
   const email = normalizeEmail(user.email ?? "");
   const access = roleAndStatusForEmail(email);
   const createdAt = user.createdAt || nowIso();
+  const fallbackCredential =
+    user.passwordHash && user.passwordSalt
+      ? {
+          passwordHash: user.passwordHash,
+          passwordSalt: user.passwordSalt,
+          passwordVersion: LOCAL_PASSWORD_VERSION,
+        } as const
+      : createPasswordCredential(user.password || "123456");
 
   return {
     id: user.id || createUserId(),
     name: user.name || "Usuario",
     email,
-    password: user.password || "123456",
+    ...fallbackCredential,
     role: user.role === "admin" || user.role === "tester" ? user.role : access.role,
     status:
       user.status === "active" || user.status === "pending" || user.status === "blocked"
@@ -127,7 +232,8 @@ function readUsers(): StoredAuthUser[] {
 
 function writeUsers(users: StoredAuthUser[]) {
   if (!isBrowser()) return;
-  window.localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
+  const safeUsers = users.map(({ password: _password, ...user }) => user);
+  window.localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(safeUsers));
 }
 
 function writeSession(userId: string | null) {
@@ -215,14 +321,41 @@ function readOnboardingData(userId: string): OnboardingData {
               !Number.isNaN(new Date(expense.dueDate).getTime())
           )
       : undefined;
+    const focus =
+      parsed.focus === "precificacao" || parsed.focus === "seguranca" || parsed.focus === null
+        ? parsed.focus
+        : undefined;
+    const porcentagens =
+      parsed.porcentagens &&
+      typeof parsed.porcentagens === "object" &&
+      typeof parsed.porcentagens.negocio === "number" &&
+      typeof parsed.porcentagens.pessoal === "number" &&
+      typeof parsed.porcentagens.reserva === "number" &&
+      Number.isFinite(parsed.porcentagens.negocio) &&
+      Number.isFinite(parsed.porcentagens.pessoal) &&
+      Number.isFinite(parsed.porcentagens.reserva)
+        ? {
+            negocio: parsed.porcentagens.negocio,
+            pessoal: parsed.porcentagens.pessoal,
+            reserva: parsed.porcentagens.reserva,
+          }
+        : undefined;
+    const metaMensal =
+      typeof parsed.metaMensal === "number" && Number.isFinite(parsed.metaMensal) && parsed.metaMensal >= 0
+        ? parsed.metaMensal
+        : undefined;
 
     return {
       step,
       usageMode,
-      monthlyIncome,
+      monthlyIncome: metaMensal !== undefined ? undefined : monthlyIncome,
       financialMode,
       debts,
       fixedExpenses,
+      flag_separacao: typeof parsed.flag_separacao === "boolean" ? parsed.flag_separacao : undefined,
+      focus,
+      porcentagens,
+      metaMensal,
     };
   } catch {
     return {};
@@ -264,12 +397,14 @@ export function authenticateUser(email: string, password: string): AuthResult {
   const users = readUsers();
   const found = users.find((item) => normalizeEmail(item.email) === normalizedEmail);
 
-  if (!found || found.password !== password) {
+  if (!found || !verifyPassword(found, password)) {
     return { ok: false, error: "Email ou senha incorretos" };
   }
 
   const updated: StoredAuthUser = {
     ...found,
+    ...createPasswordCredential(password),
+    password: undefined,
     lastLoginAt: nowIso(),
   };
   writeUsers(users.map((item) => (item.id === updated.id ? updated : item)));
@@ -287,7 +422,7 @@ export function createAccount(input: CreateAccountInput): AuthResult {
   const normalizedEmail = normalizeEmail(input.email);
 
   if (users.some((item) => normalizeEmail(item.email) === normalizedEmail)) {
-    return { ok: false, error: "Este email ja esta cadastrado" };
+    return { ok: false, error: "Este email já está cadastrado" };
   }
 
   const safeName = input.name?.trim();
@@ -295,9 +430,9 @@ export function createAccount(input: CreateAccountInput): AuthResult {
   const access = roleAndStatusForEmail(normalizedEmail);
   const newUser: StoredAuthUser = {
     id: createUserId(),
-    name: safeName || "Novo Usuario",
+    name: safeName || "Novo Usuário",
     email: normalizedEmail,
-    password: input.password,
+    ...createPasswordCredential(input.password),
     role: access.role,
     status: access.status,
     createdAt,
@@ -327,9 +462,9 @@ export function requestPasswordReset(email: string): { ok: boolean; error?: stri
   const users = readUsers();
   const exists = users.some((item) => normalizeEmail(item.email) === normalizedEmail);
   if (!exists) {
-    return { ok: false, error: "Email nao encontrado" };
+    return { ok: false, error: "Email não encontrado" };
   }
-  return { ok: true, message: "Se o email existir, enviaremos instrucoes de recuperacao." };
+  return { ok: true, message: "Se o email existir, enviaremos instruções de recuperação." };
 }
 
 export function updateAuthUserProfile(nextUser: User) {
@@ -397,7 +532,8 @@ export function saveUserOnboardingData(userId: string, nextData: Partial<Onboard
   if (
     typeof merged.monthlyIncome !== "number" ||
     !Number.isFinite(merged.monthlyIncome) ||
-    merged.monthlyIncome < 0
+    merged.monthlyIncome < 0 ||
+    typeof nextData.metaMensal === "number"
   ) {
     delete merged.monthlyIncome;
   }
@@ -430,9 +566,9 @@ export function updateUserStatus(
 
   const users = readUsers();
   const target = users.find((item) => item.id === targetUserId);
-  if (!target) return { ok: false, error: "Usuario nao encontrado" };
+  if (!target) return { ok: false, error: "Usuário não encontrado" };
   if (isAdmin(target) && status === "blocked") {
-    return { ok: false, error: "Nao e permitido bloquear administradores" };
+    return { ok: false, error: "Não é permitido bloquear administradores" };
   }
 
   const approvedAt = status === "active" ? target.approvedAt ?? nowIso() : target.approvedAt;
@@ -457,3 +593,100 @@ export function updateUserStatus(
 export function getConfiguredAdminEmails() {
   return Array.from(ADMIN_EMAILS.values());
 }
+
+async function loginWithSupabase(email: string, password: string): Promise<AuthResult> {
+  const result = await signInWithEmail(normalizeEmail(email), password);
+  if (result.error || !("data" in result) || !result.data?.user) {
+    return { ok: false, error: "Email ou senha incorretos" };
+  }
+
+  const profile = await getProfile(result.data.user.id);
+  let appUser = profile.data;
+
+  if (!appUser) {
+    appUser = buildAppUserFromSupabase({
+      id: result.data.user.id,
+      email: result.data.user.email,
+      name: result.data.user.user_metadata?.name,
+    });
+    await upsertProfile(appUser);
+  }
+
+  writeSession(appUser.id);
+  return {
+    ok: true,
+    user: appUser,
+    onboardingCompleted: readOnboardingCompleted(appUser.id),
+  };
+}
+
+async function registerWithSupabase(input: CreateAccountInput): Promise<AuthResult> {
+  const normalizedEmail = normalizeEmail(input.email);
+  const result = await signUpWithEmail(normalizedEmail, input.password, input.name);
+
+  if (result.error || !("data" in result) || !result.data?.user) {
+    return { ok: false, error: "Não foi possível criar a conta agora" };
+  }
+
+  const appUser = buildAppUserFromSupabase({
+    id: result.data.user.id,
+    email: result.data.user.email ?? normalizedEmail,
+    name: input.name,
+  });
+  const profile = await upsertProfile(appUser);
+
+  if (profile.error) {
+    return { ok: false, error: "Conta criada, mas não foi possível preparar o perfil" };
+  }
+
+  writeOnboardingCompleted(appUser.id, false);
+  writeSession(appUser.id);
+
+  return {
+    ok: true,
+    user: profile.data ?? appUser,
+    onboardingCompleted: false,
+  };
+}
+
+async function restoreSupabaseSession(): Promise<{ user: User; onboardingCompleted: boolean } | null> {
+  const current = await getCurrentSupabaseUser();
+  if (current.error || !current.data) {
+    writeSession(null);
+    return null;
+  }
+
+  const profile = await getProfile(current.data.id);
+  let appUser = profile.data;
+
+  if (!appUser) {
+    appUser = buildAppUserFromSupabase({
+      id: current.data.id,
+      email: current.data.email,
+      name: current.data.user_metadata?.name,
+    });
+    await upsertProfile(appUser);
+  }
+
+  writeSession(appUser.id);
+  return {
+    user: appUser,
+    onboardingCompleted: readOnboardingCompleted(appUser.id),
+  };
+}
+
+export const AuthService = {
+  login: (email: string, password: string) =>
+    hasSupabaseConfig ? loginWithSupabase(email, password) : Promise.resolve(authenticateUser(email, password)),
+  register: (input: CreateAccountInput) =>
+    hasSupabaseConfig ? registerWithSupabase(input) : Promise.resolve(createAccount(input)),
+  logout: async () => {
+    if (hasSupabaseConfig) {
+      await signOutSupabase();
+    }
+    clearAuthSession();
+  },
+  getCurrentUser: () =>
+    hasSupabaseConfig ? restoreSupabaseSession() : Promise.resolve(restoreAuthSession()),
+  isAdmin,
+};

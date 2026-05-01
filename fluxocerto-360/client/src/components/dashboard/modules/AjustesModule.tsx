@@ -1,5 +1,5 @@
 ﻿import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { CreditCard, Plus, Settings2, Trash2, User, Wrench } from "lucide-react";
+import { CreditCard, FolderKanban, Plus, Settings2, ShieldCheck, SlidersHorizontal, Trash2, User, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
@@ -22,13 +22,22 @@ import type {
 } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
-type SettingsTab = "gerais" | "taxas" | "servicos" | "contas";
+type SettingsTab = "perfil" | "potes" | "taxas" | "servicos" | "contas" | "preferencias";
+type SubpotKey = "personal" | "business" | "reserve";
+type Subpot = {
+  id: string;
+  pot: SubpotKey;
+  name: string;
+  goal: number;
+};
 
 const TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
-  { id: "gerais", label: "Gerais", icon: <User className="h-4 w-4" /> },
-  { id: "taxas", label: "Taxas de Pagamento", icon: <CreditCard className="h-4 w-4" /> },
-  { id: "servicos", label: "Servicos", icon: <Wrench className="h-4 w-4" /> },
-  { id: "contas", label: "Contas", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "perfil", label: "Perfil", icon: <User className="h-4 w-4" /> },
+  { id: "potes", label: "Potes", icon: <FolderKanban className="h-4 w-4" /> },
+  { id: "taxas", label: "Taxas", icon: <CreditCard className="h-4 w-4" /> },
+  { id: "servicos", label: "Serviços", icon: <Wrench className="h-4 w-4" /> },
+  { id: "contas", label: "Contas / Tipos", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "preferencias", label: "Preferências", icon: <SlidersHorizontal className="h-4 w-4" /> },
 ];
 
 const ACCOUNT_CATEGORIES: AdjustmentAccountCategory[] = [
@@ -52,6 +61,23 @@ const POT_DISTRIBUTION_DEFAULT: PotDistribution = {
   reserve: 10,
 };
 
+const SUBPOTS_STORAGE_PREFIX = "fc360:settings:subpots:";
+
+const DEFAULT_SUBPOTS: Subpot[] = [
+  { id: "personal-essencial", pot: "personal", name: "Essencial", goal: 0 },
+  { id: "personal-lazer", pot: "personal", name: "Lazer", goal: 0 },
+  { id: "personal-familia", pot: "personal", name: "Família", goal: 0 },
+  { id: "personal-saude", pot: "personal", name: "Saúde", goal: 0 },
+  { id: "business-investimento", pot: "business", name: "Investimento", goal: 0 },
+  { id: "business-melhorias", pot: "business", name: "Melhorias", goal: 0 },
+  { id: "business-ferramentas", pot: "business", name: "Ferramentas", goal: 0 },
+  { id: "business-marketing", pot: "business", name: "Marketing", goal: 0 },
+  { id: "reserve-emergencia", pot: "reserve", name: "Emergência", goal: 0 },
+  { id: "reserve-viagem", pot: "reserve", name: "Viagem", goal: 0 },
+  { id: "reserve-carro", pot: "reserve", name: "Carro novo", goal: 0 },
+  { id: "reserve-planos", pot: "reserve", name: "Grandes planos", goal: 0 },
+];
+
 function dayDiffFromToday(iso: string) {
   const target = new Date(iso);
   if (Number.isNaN(target.getTime())) return 999;
@@ -65,10 +91,56 @@ function mapPotLabel(pot: AdjustmentAccountPot) {
   return pot === "pf" ? "Dinheiro pessoal (PF)" : "Dinheiro do negocio (PJ)";
 }
 
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function readSubpots(userId?: string): Subpot[] {
+  if (!userId || typeof window === "undefined") return DEFAULT_SUBPOTS;
+  const raw = window.localStorage.getItem(`${SUBPOTS_STORAGE_PREFIX}${userId}`);
+  if (!raw) return DEFAULT_SUBPOTS;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<Subpot>[];
+    if (!Array.isArray(parsed)) return DEFAULT_SUBPOTS;
+    const safe = parsed
+      .map((item) => ({
+        id: String(item.id ?? createId("subpot")),
+        pot: item.pot === "personal" || item.pot === "business" || item.pot === "reserve" ? item.pot : "personal",
+        name: String(item.name ?? "").trim(),
+        goal: Number(item.goal ?? 0),
+      }))
+      .filter((item) => item.name && Number.isFinite(item.goal) && item.goal >= 0);
+    return safe.length > 0 ? safe : DEFAULT_SUBPOTS;
+  } catch {
+    return DEFAULT_SUBPOTS;
+  }
+}
+
+function getPotCopy(pot: SubpotKey) {
+  if (pot === "personal") {
+    return {
+      title: "Pessoal",
+      helper: "Dinheiro para sua vida pessoal.",
+    };
+  }
+  if (pot === "business") {
+    return {
+      title: "Negócio",
+      helper: "Dinheiro para manter e melhorar seu trabalho.",
+    };
+  }
+  return {
+    title: "Reserva",
+    helper: "Dinheiro protegido para não passar aperto.",
+  };
+}
+
 export default function AjustesModule() {
   const {
     user,
     setUser,
+    pots,
     services,
     addService,
     deleteService,
@@ -85,9 +157,16 @@ export default function AjustesModule() {
   } = useApp();
   const [, setLocation] = useLocation();
 
-  const [activeTab, setActiveTab] = useState<SettingsTab>("gerais");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("perfil");
   const [nameDraft, setNameDraft] = useState(user?.name ?? "");
   const [serviceDraft, setServiceDraft] = useState({ name: "", price: "", duration: "" });
+  const [subpots, setSubpots] = useState<Subpot[]>(() => readSubpots(user?.id));
+  const [expandedPotKey, setExpandedPotKey] = useState<SubpotKey | null>(null);
+  const [subpotDrafts, setSubpotDrafts] = useState<Record<SubpotKey, { name: string; goal: string }>>({
+    personal: { name: "", goal: "" },
+    business: { name: "", goal: "" },
+    reserve: { name: "", goal: "" },
+  });
   const [potDistributionDraft, setPotDistributionDraft] = useState({
     personal: `${potDistribution.personal}`,
     business: `${potDistribution.business}`,
@@ -109,6 +188,15 @@ export default function AjustesModule() {
   useEffect(() => {
     setNameDraft(user?.name ?? "");
   }, [user?.name]);
+
+  useEffect(() => {
+    setSubpots(readSubpots(user?.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || typeof window === "undefined") return;
+    window.localStorage.setItem(`${SUBPOTS_STORAGE_PREFIX}${user.id}`, JSON.stringify(subpots));
+  }, [subpots, user?.id]);
 
   useEffect(() => {
     setPotDistributionDraft({
@@ -139,6 +227,32 @@ export default function AjustesModule() {
     return { totalDebt, overdue, dueSoon };
   }, [adjustmentAccounts]);
 
+ const potCards = useMemo(
+  () =>
+    ([
+      {
+        key: "personal" as const,
+        percentage: potDistribution.personal,
+        pot: pots.find((item) => item.type === "pessoal"),
+      },
+      {
+        key: "business" as const,
+        percentage: potDistribution.business,
+        pot: pots.find((item) => item.type === "negocio"),
+      },
+      {
+        key: "reserve" as const,
+        percentage: potDistribution.reserve,
+        pot: pots.find((item) => item.type === "reserva"),
+      },
+    ]).map((item) => ({
+      ...item,
+      ...getPotCopy(item.key),
+      balance: item.pot?.balance ?? 0,
+      subpots: subpots.filter((subpot) => subpot.pot === item.key),
+    })),
+  [potDistribution.business, potDistribution.personal, potDistribution.reserve, pots, subpots]
+);
   const potDistributionValidation = useMemo(() => {
     const fields = {
       personal: potDistributionDraft.personal.trim(),
@@ -162,7 +276,7 @@ export default function AjustesModule() {
     if (hasEmpty) {
       message = "Preencha todos os campos de porcentagem.";
     } else if (hasNegative) {
-      message = "Nao e permitido valor negativo.";
+      message = "Não e permitido valor negativo.";
     } else if (hasInvalid) {
       message = "Use apenas numeros validos.";
     } else if (sum > 100) {
@@ -183,11 +297,11 @@ export default function AjustesModule() {
 
   const handleSaveName = () => {
     if (!nameDraft.trim()) {
-      toast.error("Nome nao pode ficar vazio");
+      toast.error("Nome não pode ficar vazio");
       return;
     }
     if (!user) {
-      toast.error("Usuario nao carregado");
+      toast.error("Usuario não carregado");
       return;
     }
 
@@ -206,7 +320,7 @@ export default function AjustesModule() {
     });
 
     if (!result.ok) {
-      toast.error(result.error ?? "Erro ao adicionar servico");
+      toast.error(result.error ?? "Erro ao adicionar serviço");
       return;
     }
 
@@ -236,6 +350,45 @@ export default function AjustesModule() {
     });
   };
 
+  const handleAddSubpot = (pot: SubpotKey) => {
+    const draft = subpotDrafts[pot];
+    const name = draft.name.trim();
+    const goal = Number(draft.goal || 0);
+
+    if (!name) {
+      toast.error("Nome do subpote e obrigatório");
+      return;
+    }
+    if (!Number.isFinite(goal) || goal < 0) {
+      toast.error("Objetivo inválido");
+      return;
+    }
+
+    setSubpots((prev) => [...prev, { id: createId("subpot"), pot, name, goal }]);
+    setSubpotDrafts((prev) => ({ ...prev, [pot]: { name: "", goal: "" } }));
+    toast.success("Subpote criado");
+  };
+
+  const handleUpdateSubpot = (id: string, changes: Partial<Pick<Subpot, "name" | "goal">>) => {
+    setSubpots((prev) =>
+      prev.map((subpot) =>
+        subpot.id === id
+          ? {
+              ...subpot,
+              ...changes,
+              name: changes.name !== undefined ? changes.name : subpot.name,
+              goal: changes.goal !== undefined && Number.isFinite(changes.goal) && changes.goal >= 0 ? changes.goal : subpot.goal,
+            }
+          : subpot
+      )
+    );
+  };
+
+  const handleRemoveSubpot = (id: string) => {
+    setSubpots((prev) => prev.filter((subpot) => subpot.id !== id));
+    toast.success("Subpote removido");
+  };
+
   const handleConfirmReset = () => {
     if (resetConfirmText !== "RESETAR") {
       toast.error("Digite RESETAR para confirmar.");
@@ -244,7 +397,7 @@ export default function AjustesModule() {
 
     const result = resetUserFinancialData();
     if (!result.ok) {
-      toast.error(result.error ?? "Nao foi possivel resetar.");
+      toast.error(result.error ?? "Não foi possível resetar.");
       return;
     }
 
@@ -257,11 +410,11 @@ export default function AjustesModule() {
   const handleAddAccount = () => {
     const amount = Number(accountDraft.amount);
     if (!accountDraft.name.trim()) {
-      toast.error("Nome da conta e obrigatorio");
+      toast.error("Nome da conta e obrigatório");
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Valor invalido");
+      toast.error("Valor inválido");
       return;
     }
     if (!accountDraft.dueDate) {
@@ -306,7 +459,7 @@ export default function AjustesModule() {
   const handlePayAccount = (account: AdjustmentAccount) => {
     const result = payAdjustmentAccount(account.id);
     if (!result.ok) {
-      toast.error(result.error ?? "Nao foi possivel pagar");
+      toast.error(result.error ?? "Não foi possível pagar");
       return;
     }
 
@@ -321,7 +474,8 @@ export default function AjustesModule() {
     <section className="fd-settings-v2">
       <header className="fd-settings-v2-head">
         <h2>Ajustes</h2>
-        <p>Painel interno com configuracoes separadas por contexto</p>
+        <p>Deixe o FluxoCerto do seu jeito, sem complicar.</p>
+        <small>Configure uma vez e o app trabalha melhor por você.</small>
       </header>
 
       <nav className="fd-settings-v2-tabs">
@@ -338,16 +492,16 @@ export default function AjustesModule() {
         ))}
       </nav>
 
-      {activeTab === "gerais" && (
+      {activeTab === "perfil" && (
         <article className="fd-panel fd-glass fd-settings-v2-card">
           <div className="fd-panel-head">
-            <h2>Gerais</h2>
-            <p>Identidade do usuario</p>
+            <h2>Perfil</h2>
+            <p>Seu nome e a forma como o app conversa com você.</p>
           </div>
 
           <div className="fd-settings-small-card">
             <label>
-              Nome do usuario
+              Nome do usuário
               <input
                 className="fd-pot-input"
                 value={nameDraft}
@@ -359,19 +513,30 @@ export default function AjustesModule() {
               Salvar nome
             </button>
           </div>
+        </article>
+      )}
 
-          <div className="fd-settings-small-card">
-            <h3>Distribuição dos Potes</h3>
-            <p>
-              Defina como cada entrada será dividida automaticamente. O FluxoCerto sugere uma divisão inicial, mas
-              você pode ajustar conforme sua realidade.
-            </p>
+      {activeTab === "potes" && (
+        <article className="fd-panel fd-glass fd-settings-v2-card fd-settings-pots-card">
+          <div className="fd-panel-head">
+            <h2>Potes e subpotes</h2>
+            <p>Subpotes ajudam você a enxergar para onde o dinheiro vai dentro de cada pote.</p>
+          </div>
 
-            <div className="fd-settings-fees-list">
-              <div className="fd-settings-fee-row enabled">
+          <div className="fd-settings-small-card fd-settings-division-card">
+            <div className="fd-settings-division-head">
+              <div>
+                <h3>Divisão dos potes</h3>
+                <p>Defina como cada entrada real será separada.</p>
+              </div>
+              <span>Soma atual: {potDistributionValidation.sum}%</span>
+            </div>
+
+            <div className="fd-settings-division-grid">
+              <div className="fd-settings-division-item">
                 <div>
                   <p>Pessoal</p>
-                  <small>dinheiro para sua vida pessoal</small>
+                  <small>Dinheiro para sua vida pessoal.</small>
                 </div>
                 <div className="fd-inline-end">
                   <input
@@ -388,10 +553,10 @@ export default function AjustesModule() {
                 </div>
               </div>
 
-              <div className="fd-settings-fee-row enabled">
+              <div className="fd-settings-division-item">
                 <div>
                   <p>Negócio</p>
-                  <small>dinheiro para manter seu trabalho funcionando</small>
+                  <small>Dinheiro para manter e melhorar seu trabalho.</small>
                 </div>
                 <div className="fd-inline-end">
                   <input
@@ -408,10 +573,10 @@ export default function AjustesModule() {
                 </div>
               </div>
 
-              <div className="fd-settings-fee-row enabled">
+              <div className="fd-settings-division-item">
                 <div>
                   <p>Reserva</p>
-                  <small>proteção para imprevistos</small>
+                  <small>Dinheiro protegido para não passar aperto.</small>
                 </div>
                 <div className="fd-inline-end">
                   <input
@@ -431,16 +596,14 @@ export default function AjustesModule() {
 
             {potDistributionValidation.message ? (
               <div className="fd-settings-form-placeholder">{potDistributionValidation.message}</div>
-            ) : (
-              <div className="fd-settings-form-placeholder">Soma atual: {potDistributionValidation.sum}%</div>
-            )}
+            ) : null}
             <div className="fd-settings-actions-row">
               <button
                 type="button"
                 className="fd-mini-btn fd-settings-action-btn"
                 onClick={handleRestorePotDistributionDefault}
               >
-                Restaurar sugestao inicial
+                Restáurar sugestão
               </button>
               <button
                 type="button"
@@ -448,29 +611,115 @@ export default function AjustesModule() {
                 disabled={!potDistributionValidation.canSave}
                 onClick={handleSavePotDistribution}
               >
-                Salvar distribuicao
+                Salvar divisão
               </button>
             </div>
           </div>
 
-          <div className="fd-settings-small-card fd-settings-safety-zone border border-rose-400/25 bg-rose-500/5">
-            <h3>Zona de segurança</h3>
-            <p>
-              Use esta opção apenas se quiser recomeçar do zero. Sua conta continuará ativa, mas suas informações
-              financeiras serão apagadas.
-            </p>
-            <div className="fd-settings-actions-row">
-              <button
-                type="button"
-                className="fd-mini-btn fd-settings-action-btn fd-settings-reset-btn border-rose-400/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
-                onClick={() => {
-                  setResetConfirmText("");
-                  setIsResetDialogOpen(true);
-                }}
-              >
-                Resetar minhas informações
-              </button>
-            </div>
+          <div className="fd-settings-pot-grid">
+            {potCards.map((card) => {
+              const isExpanded = expandedPotKey === card.key;
+              const visibleSubpots = isExpanded ? card.subpots : card.subpots.slice(0, 3);
+
+              return (
+                <section key={card.key} className={`fd-settings-pot-card ${card.key}`}>
+                  <header>
+                    <div>
+                      <h3>{card.title}</h3>
+                      <p>{card.helper}</p>
+                    </div>
+                    <strong>{card.percentage}%</strong>
+                  </header>
+
+                  <div className="fd-settings-pot-balance">
+                    <span>Valor atual real</span>
+                    <strong>{formatCurrency(card.balance)}</strong>
+                  </div>
+
+                  <div className="fd-settings-subpot-list">
+                    {visibleSubpots.map((subpot) => {
+                      const progress = subpot.goal > 0 ? 0 : 0;
+                      return (
+                        <div key={subpot.id} className="fd-settings-subpot">
+                          <div className="fd-settings-subpot-fields">
+                            <input
+                              className="fd-pot-input"
+                              value={subpot.name}
+                              onChange={(event) => handleUpdateSubpot(subpot.id, { name: event.target.value })}
+                              aria-label="Nome do subpote"
+                            />
+                            <input
+                              className="fd-pot-input"
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={subpot.goal || ""}
+                              onChange={(event) =>
+                                handleUpdateSubpot(subpot.id, { goal: Number(event.target.value || 0) })
+                              }
+                              placeholder="Objetivo"
+                              aria-label="Objetivo do subpote"
+                            />
+                            <button className="fd-mini-btn" type="button" onClick={() => handleRemoveSubpot(subpot.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="fd-settings-subpot-meta">
+                            <span>Atual: {formatCurrency(0)}</span>
+                            <span>Objetivo: {subpot.goal > 0 ? formatCurrency(subpot.goal) : "opcional"}</span>
+                          </div>
+                          <div className="fd-settings-subpot-progress">
+                            <div style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {card.subpots.length > 3 ? (
+                    <button
+                      type="button"
+                      className="fd-mini-btn fd-settings-subpot-toggle"
+                      onClick={() => setExpandedPotKey((current) => (current === card.key ? null : card.key))}
+                    >
+                      {isExpanded ? "Ver menos" : `Ver todos (${card.subpots.length})`}
+                    </button>
+                  ) : null}
+
+                  <div className="fd-settings-subpot-add">
+                    <input
+                      className="fd-pot-input"
+                      value={subpotDrafts[card.key].name}
+                      onChange={(event) =>
+                        setSubpotDrafts((prev) => ({
+                          ...prev,
+                          [card.key]: { ...prev[card.key], name: event.target.value },
+                        }))
+                      }
+                      placeholder="Novo subpote"
+                    />
+                    <input
+                      className="fd-pot-input"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={subpotDrafts[card.key].goal}
+                      onChange={(event) =>
+                        setSubpotDrafts((prev) => ({
+                          ...prev,
+                          [card.key]: { ...prev[card.key], goal: event.target.value },
+                        }))
+                      }
+                      placeholder="Objetivo opcional"
+                    />
+                    <button className="fd-mini-btn" type="button" onClick={() => handleAddSubpot(card.key)}>
+                      <Plus className="h-4 w-4" />
+                      Subpote
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </article>
       )}
@@ -478,8 +727,8 @@ export default function AjustesModule() {
       {activeTab === "taxas" && (
         <article className="fd-panel fd-glass fd-settings-v2-card">
           <div className="fd-panel-head">
-            <h2>Taxas de Pagamento</h2>
-            <p>Ative/desative meios e ajuste taxas em percentual</p>
+            <h2>Taxas de pagamento</h2>
+            <p>Assim o app mostra quanto realmente sobra depois de cada venda.</p>
           </div>
 
           <div className="fd-settings-fees-list">
@@ -519,14 +768,14 @@ export default function AjustesModule() {
       {activeTab === "servicos" && (
         <article className="fd-panel fd-glass fd-settings-v2-card">
           <div className="fd-panel-head">
-            <h2>Servicos</h2>
-            <p>Cadastro atual preservado</p>
+            <h2>Seus serviços</h2>
+            <p>Cadastre o que você vende para lançar entradas mais rápido.</p>
           </div>
 
           <div className="fd-inline-form">
             <input
               className="fd-pot-input"
-              placeholder="Nome do servico"
+              placeholder="Nome do serviço"
               value={serviceDraft.name}
               onChange={(event) => setServiceDraft((prev) => ({ ...prev, name: event.target.value }))}
             />
@@ -573,9 +822,13 @@ export default function AjustesModule() {
       {activeTab === "contas" && (
         <article className="fd-panel fd-glass fd-settings-v2-card">
           <div className="fd-panel-head">
-            <h2>Contas</h2>
-            <p>Controle PF/PJ com automacao de recorrencia e parcelas</p>
+            <h2>Contas e categorias</h2>
+            <p>Organize seus gastos sem criar bagunça.</p>
           </div>
+
+          <p className="fd-settings-type-note">
+            Use tipos simples para não criar bagunça: pessoal, negócio, custos e investimentos.
+          </p>
 
           <div className="fd-settings-bills-summary">
             <div>
@@ -681,7 +934,7 @@ export default function AjustesModule() {
                           <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
                         </div>
                         <small>
-                          {account.category} â€¢ {mapPotLabel(account.pot)} â€¢ vence {account.dueDate}
+                          {account.category} ? {mapPotLabel(account.pot)} ? vence {account.dueDate}
                         </small>
                         <div className="fd-settings-bill-meta">
                           <span>{formatCurrency(account.amount)}</span>
@@ -728,7 +981,7 @@ export default function AjustesModule() {
                           <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
                         </div>
                         <small>
-                          {account.category} â€¢ {mapPotLabel(account.pot)} â€¢ vence {account.dueDate}
+                          {account.category} ? {mapPotLabel(account.pot)} ? vence {account.dueDate}
                         </small>
                         <div className="fd-settings-bill-meta">
                           <span>{formatCurrency(account.amount)}</span>
@@ -756,6 +1009,42 @@ export default function AjustesModule() {
                   })
                 )}
               </div>
+            </div>
+          </div>
+        </article>
+      )}
+
+      {activeTab === "preferencias" && (
+        <article className="fd-panel fd-glass fd-settings-v2-card">
+          <div className="fd-panel-head">
+            <h2>Preferências</h2>
+            <p>Pequenos ajustes e ações de segurança.</p>
+          </div>
+
+          <div className="fd-settings-small-card">
+            <h3>
+              <ShieldCheck className="h-4 w-4" /> Segurança dos dados
+            </h3>
+            <p>Resetar não mexe no seu acesso. Só apaga informações financeiras salvas neste app.</p>
+          </div>
+
+          <div className="fd-settings-small-card fd-settings-safety-zone border border-rose-400/25 bg-rose-500/5">
+            <h3>Zona de segurança</h3>
+            <p>
+              Use está opção apenas se quiser recomeçar do zero. Sua conta continuará ativa, mas suas informações
+              financeiras serão apagadas.
+            </p>
+            <div className="fd-settings-actions-row">
+              <button
+                type="button"
+                className="fd-mini-btn fd-settings-action-btn fd-settings-reset-btn border-rose-400/40 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20"
+                onClick={() => {
+                  setResetConfirmText("");
+                  setIsResetDialogOpen(true);
+                }}
+              >
+                Resetar minhas informações
+              </button>
             </div>
           </div>
         </article>
@@ -803,7 +1092,3 @@ export default function AjustesModule() {
     </section>
   );
 }
-
-
-
-

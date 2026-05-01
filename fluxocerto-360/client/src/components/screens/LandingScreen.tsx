@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
+import BrandLogo from "@/components/ui/BrandLogo";
 import { ScreenType } from "@/lib/types";
 
 const FEATURES = [
@@ -46,7 +46,6 @@ const CTA_BULLETS = ["7 dias grátis para testar tudo", "Sem cartão de crédito
 
 export default function LandingScreen() {
   const { goScreen } = useApp();
-  const [logoSrc, setLogoSrc] = useState("/logo-full.png");
 
   const goToAuth = () => goScreen(ScreenType.LOGIN);
 
@@ -60,13 +59,20 @@ export default function LandingScreen() {
 
       <header className="sticky top-0 z-50 border-b border-emerald-300/10 bg-[#020617]/74 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between gap-4 px-5 md:px-8">
-          <button type="button" onClick={goToAuth} className="flex min-w-0 items-center">
-            <img
-              src={logoSrc}
+          <button
+            type="button"
+            onClick={goToAuth}
+            className="group flex min-w-0 items-center gap-3 rounded-2xl border border-emerald-300/12 bg-white/[0.035] px-2.5 py-2 pr-4 shadow-[0_0_24px_rgba(34,197,94,0.08)] backdrop-blur-xl transition hover:border-emerald-300/28 hover:bg-emerald-400/[0.06] hover:shadow-[0_0_30px_rgba(34,197,94,0.16)]"
+          >
+            <BrandLogo
+              variant="icon"
               alt="FluxoCerto 360"
-              onError={() => setLogoSrc("/icon.png")}
-              className="h-9 w-auto max-w-[188px] object-contain"
+              className="h-10 w-10 rounded-xl object-contain drop-shadow-[0_0_18px_rgba(34,197,94,0.20)]"
+              fallbackClassName="grid h-10 w-10 place-items-center rounded-xl text-[10px] font-black text-emerald-300"
             />
+            <span className="hidden text-sm font-black tracking-[-0.02em] text-white transition group-hover:text-emerald-100 sm:inline">
+              FluxoCerto 360
+            </span>
           </button>
 
           <nav className="hidden items-center gap-8 text-[13px] font-semibold text-slate-200/90 lg:flex">
@@ -255,7 +261,7 @@ export default function LandingScreen() {
       <footer className="relative z-10 border-t border-emerald-300/10 bg-[#020617]/88">
         <div className="mx-auto grid w-full max-w-[1280px] gap-9 px-5 py-10 md:grid-cols-2 md:px-8 lg:grid-cols-[1.4fr_0.75fr_0.75fr_0.75fr_1fr]">
           <div>
-            <img src="/logo-full.png" alt="FluxoCerto 360" className="h-10 w-auto object-contain" />
+            <BrandLogo variant="full" className="h-10 w-auto object-contain" />
             <p className="mt-4 max-w-xs text-sm leading-6 text-slate-400">
               Sistema completo para organizar seu dinheiro pessoal e do negócio.
             </p>
@@ -290,7 +296,7 @@ function HeroMockup() {
         <div className="h-full overflow-hidden rounded-[34px] border border-white/10 bg-[#030b08] p-4">
           <div className="mx-auto h-5 w-24 rounded-full bg-black/75" />
           <div className="mt-5 flex items-center justify-between">
-            <img src="/logo-full.png" alt="FluxoCerto" className="h-auto w-28 object-contain" />
+            <BrandLogo variant="full" alt="FluxoCerto" className="h-auto w-28 object-contain" />
             <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-black text-emerald-300">
               360
             </span>
@@ -384,7 +390,7 @@ function ProductShowcase() {
           <div className="overflow-hidden rounded-2xl border border-white/8 bg-[#030b08]">
             <div className="grid min-h-[310px] grid-cols-[120px_1fr]">
               <aside className="border-r border-emerald-300/10 bg-black/24 p-4">
-                <img src="/logo-full.png" alt="FluxoCerto" className="h-auto w-24 object-contain" />
+                <BrandLogo variant="full" alt="FluxoCerto" className="h-auto w-24 object-contain" />
                 <div className="mt-6 grid gap-3 text-[11px] font-bold text-slate-400">
                   {["Início", "Fluxo de Caixa", "Potes", "Metas", "Consultor IA", "Relatórios"].map((item, index) => (
                     <span key={item} className={index === 0 ? "text-emerald-300" : ""}>{item}</span>
@@ -463,3 +469,4 @@ function FooterColumn({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
+

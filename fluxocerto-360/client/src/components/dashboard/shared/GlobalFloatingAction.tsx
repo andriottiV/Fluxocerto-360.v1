@@ -126,7 +126,7 @@ export default function GlobalFloatingAction() {
           type="button"
           className={`fd-fab ${isMenuOpen ? "open" : ""}`}
           onClick={() => setIsMenuOpen((prev) => !prev)}
-          aria-label="Acoes rapidas"
+          aria-label="Ações rápidas"
         >
           <Plus className="h-6 w-6" />
         </button>

@@ -262,19 +262,19 @@ export function getUserGoals(input: {
 export function generateGoalEncouragement(goal: UserGoal) {
   if (goal.status === "completed") return "Meta batida. Agora e manter consistencia e subir o proximo nivel.";
   if (goal.status === "near") {
-    return `Boa, voce ja chegou em ${goal.progress.toFixed(0)}% da meta. Agora e mais constancia do que esforco gigante.`;
+    return `Boa, você já chegou em ${goal.progress.toFixed(0)}% da meta. Agora é mais constância do que esforço gigante.`;
   }
   if (goal.status === "stagnant") {
     return "Sua meta ficou sem evolucao nos ultimos dias. Quer que eu monte um plano leve para destravar?";
   }
-  return `Voce ainda esta longe, mas da para quebrar em partes menores. Primeiro alvo: ${formatCurrency(
+  return `Você ainda está longe, mas dá para quebrar em partes menores. Primeiro alvo: ${formatCurrency(
     Math.max(0, goal.currentValue + Math.max(1, goal.targetValue - goal.currentValue) * 0.2)
   )} nos proximos 15 dias.`;
 }
 
 export function suggestDailyActionForGoal(goal: UserGoal) {
   if (goal.type === "reserva_emergencia") return "Separe hoje um valor pequeno e automatico para a reserva antes dos outros gastos.";
-  if (goal.type === "quitar_divida") return "Hoje, bloqueie no caixa o valor minimo da proxima parcela para nao perder ritmo.";
+  if (goal.type === "quitar_divida") return "Hoje, bloqueie no caixa o valor mínimo da próxima parcela para não perder ritmo.";
   if (goal.type === "faturamento_mensal") return "Hoje, acione clientes de retorno rapido e preencha um horario ocioso.";
   if (goal.type === "economia_mensal") return "Hoje, corte uma saida de baixo impacto e direcione o valor para a meta.";
   if (goal.type === "viagem") return "Hoje, reserve um valor fixo e evite mexer nesse montante.";
@@ -290,16 +290,16 @@ export function generateGoalStrategy(goal: UserGoal) {
 
   const statusText =
     goal.status === "completed"
-      ? "Voce bateu a meta e agora entra em fase de manutencao."
+      ? "Você bateu a meta e agora entra em fase de manutenção."
       : goal.status === "near"
-      ? `Voce esta perto: ${goal.progress.toFixed(0)}% concluido.`
+      ? `Você está perto: ${goal.progress.toFixed(0)}% concluído.`
       : goal.status === "stagnant"
       ? `Meta parada ha ${goal.stagnantDays} dias.`
-      : `Voce esta em ${goal.progress.toFixed(0)}% da meta e ainda ha espaco para acelerar.`;
+      : `Você está em ${goal.progress.toFixed(0)}% da meta e ainda há espaço para acelerar.`;
 
   const estimateText = goal.estimatedDays
     ? `No ritmo atual, a previsao e de cerca de ${goal.estimatedDays} dias para concluir.`
-    : "Sem ritmo consistente nos ultimos dias, ainda nao da para estimar prazo com seguranca.";
+    : "Sem ritmo consistente nos últimos dias, ainda não dá para estimar prazo com segurança.";
 
   return {
     statusText,
@@ -383,7 +383,7 @@ export function buildGoalMentorResponse(input: GoalMentorInput): {
       matched: true,
       riskTone: "attention",
       message:
-        "Ainda nao encontrei metas financeiras configuradas para acompanhar. Se quiser, eu te ajudo a criar uma meta simples agora e quebrar em passos de hoje, 7 dias e 30 dias.",
+        "Ainda não encontrei metas financeiras configuradas para acompanhar. Se quiser, eu te ajudo a criar uma meta simples agora e quebrar em passos de hoje, 7 dias e 30 dias.",
       quickActions: ["Criar meta de reserva", "Criar meta de faturamento", "Criar meta para quitar divida"],
       cards: [{ title: "Status de metas", description: "Sem metas ativas no momento" }],
     };

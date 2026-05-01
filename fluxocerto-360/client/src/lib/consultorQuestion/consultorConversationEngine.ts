@@ -162,7 +162,7 @@ function buildDecisionMessage(params: {
   const safeTone =
     advisor.snapshot.riskProfile.level === "high"
       ? "seu caixa esta sensivel e pede cautela"
-      : "voce tem margem, mas precisa de disciplina";
+      : "você tem margem, mas precisa de disciplina";
 
   let decision: HumanizedDecision;
 
@@ -172,12 +172,12 @@ function buildDecisionMessage(params: {
       contextKey: "travel",
       scenarioReading: canTravel
         ? `da para planejar essa viagem com controle, porque ${safeTone}`
-        : `hoje nao e o melhor momento para viagem, porque ${safeTone}`,
+        : `hoje não é o melhor momento para viagem, porque ${safeTone}`,
       practicalGuidance: canTravel
         ? "separe so o valor da viagem e mantenha folga para o giro da semana"
         : "segure gasto opcional e recupere previsibilidade primeiro",
       clearLimit: canTravel
-        ? `nao passar de ${toMoney(metrics.travelLimit)} agora`
+        ? `não passar de ${toMoney(metrics.travelLimit)} agora`
         : `preservar pelo menos ${toMoney(metrics.protectedBase)} antes desse passo`,
       conversationClosing: "Me diz o plano da viagem que eu te falo se vale fazer agora.",
       card: {
@@ -191,7 +191,7 @@ function buildDecisionMessage(params: {
       scenarioReading:
         metrics.withdrawLimit > 0
           ? `ha espaco para retirada pessoal sem baguncar o fluxo, mas ${safeTone}`
-          : `hoje nao ha folga para retirada sem apertar os proximos dias`,
+          : `hoje não há folga para retirada sem apertar os próximos dias`,
       practicalGuidance:
         metrics.withdrawLimit > 0
           ? "retire com teto e deixe reserva operacional"
@@ -200,7 +200,7 @@ function buildDecisionMessage(params: {
         metrics.withdrawLimit > 0
           ? `retirada de ate ${toMoney(metrics.withdrawLimit)}`
           : `nenhuma retirada ate recuperar ${toMoney(metrics.protectedBase)} de protecao`,
-      conversationClosing: "Se quiser, eu monto um teto semanal de retirada para voce.",
+      conversationClosing: "Se quiser, eu monto um teto semanal de retirada para você.",
       card: {
         title: "Retirada segura agora",
         description: `${toMoney(metrics.withdrawLimit)}`,
@@ -212,7 +212,7 @@ function buildDecisionMessage(params: {
       scenarioReading:
         metrics.prudentInvest > 0
           ? `da para investir com controle e proteger o dia a dia`
-          : `ainda nao e hora de investir sem risco de aperto`,
+          : `ainda não é hora de investir sem risco de aperto`,
       practicalGuidance:
         metrics.prudentInvest > 0
           ? "comeca pequeno e mede impacto por 7 dias"
@@ -236,13 +236,13 @@ function buildDecisionMessage(params: {
           : "o cenario esta apertado e gasto impulsivo pode te prender",
       practicalGuidance:
         metrics.safeSpend > 0
-          ? "prioriza essencial e adia o que nao traz retorno"
+          ? "prioriza essencial e adia o que não traz retorno"
           : "segura opcional e protege operacao",
       clearLimit:
         metrics.safeSpend > 0
           ? `gasto seguro de ate ${toMoney(metrics.safeSpend)}`
           : "limite curto hoje, foco total em preservar caixa",
-      conversationClosing: "Me fala o gasto que voce quer fazer e eu te digo se vale.",
+      conversationClosing: "Me fala o gasto que você quer fazer e eu te digo se vale.",
       card: {
         title: "Limite de gasto seguro hoje",
         description: `${toMoney(metrics.safeSpend)}`,
@@ -254,7 +254,7 @@ function buildDecisionMessage(params: {
       scenarioReading:
         metrics.saveTarget > 0
           ? "ha espaco para guardar com consistencia"
-          : "vale comecar pequeno para nao travar seu mes",
+          : "vale começar pequeno para nao travar seu mes",
       practicalGuidance:
         metrics.saveTarget > 0
           ? "automatiza um valor simples toda semana"
@@ -262,7 +262,7 @@ function buildDecisionMessage(params: {
       clearLimit:
         metrics.saveTarget > 0
           ? `meta recomendada de ${toMoney(metrics.saveTarget)} no ritmo atual`
-          : "nao comprometer despesas essenciais",
+          : "não comprometer despesas essenciais",
       conversationClosing: "Quer que eu monte sua meta de 14 dias agora?",
       card: {
         title: "Valor recomendado para reserva",
@@ -275,10 +275,10 @@ function buildDecisionMessage(params: {
       scenarioReading:
         advisor.snapshot.riskProfile.level === "low"
           ? `seu momento esta mais estavel e ${safeTone}`
-          : `seu momento pede atencao para nao perder folga`,
+          : `seu momento pede atenção para não perder folga`,
       practicalGuidance: "protege caixa primeiro e decide com objetivo",
       clearLimit: `referencia segura de movimentacao hoje: ${toMoney(metrics.safeSpend)}`,
-      conversationClosing: "Me diz a decisao de agora que eu te dou o caminho mais seguro.",
+      conversationClosing: "Me diz a decisão de agora que eu te dou o caminho mais seguro.",
       card: {
         title: "Folga financeira de referencia",
         description: `${toMoney(metrics.safeSpend)}`,
@@ -346,7 +346,7 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
       riskTone: risk,
       hasGrowthIntent: true,
     });
-    const primaryAction = growthReply.quickActions?.[0] ?? "Me diz por onde voce quer comecar.";
+    const primaryAction = growthReply.quickActions?.[0] ?? "Me diz por onde você quer começar.";
 
     return {
       answer,
@@ -354,10 +354,10 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
         contextKey: "growth-advisor",
         question: input.question,
         tone,
-        baseMessage: growthReply.message ?? "Nao consegui montar a estrategia de crescimento agora.",
+        baseMessage: growthReply.message ?? "Não consegui montar a estrategia de crescimento agora.",
         scenarioReading: "Aqui o foco e crescer sem sacrificar caixa.",
         practicalGuidance: "Ticket medio, recorrencia e margem precisam andar juntos.",
-        clearLimit: "Nao aumentar custo fixo sem demanda validada.",
+        clearLimit: "Não aumentar custo fixo sem demanda validada.",
         reason: "crescimento bom e o que cabe no caixa e dura no tempo",
         nextAction: primaryAction,
       }),
@@ -389,11 +389,11 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
         contextKey: "scenario-simulator",
         question: input.question,
         tone,
-        baseMessage: scenarioReply.missingPrompt ?? scenarioReply.message ?? "Nao consegui concluir a simulacao agora.",
+        baseMessage: scenarioReply.missingPrompt ?? scenarioReply.message ?? "Não consegui concluir a simulacao agora.",
         scenarioReading: "Simular antes evita erro caro depois.",
         practicalGuidance: "Compare impacto de 3, 6 e 12 meses antes de decidir.",
-        clearLimit: "Estimativa nao e promessa de resultado.",
-        reason: "clareza de risco melhora sua decisao",
+        clearLimit: "Estimativa não é promessa de resultado.",
+        reason: "clareza de risco melhora sua decisão",
         nextAction: primaryAction,
       }),
       riskTone: risk,
@@ -418,7 +418,7 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
       isEducational: true,
       isCelebration: risk === "positive",
     });
-    const primaryAction = goalReply.quickActions?.[0] ?? "Quer que eu acompanhe essa meta com voce dia a dia?";
+    const primaryAction = goalReply.quickActions?.[0] ?? "Quer que eu acompanhe essa meta com você dia a dia?";
 
     return {
       answer,
@@ -426,10 +426,10 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
         contextKey: "goal-mentor",
         question: input.question,
         tone,
-        baseMessage: goalReply.message ?? "Nao consegui ler suas metas agora.",
+        baseMessage: goalReply.message ?? "Não consegui ler suas metas agora.",
         scenarioReading: "Meta sem acompanhamento vira desejo. Meta com plano vira resultado.",
         practicalGuidance: "Divida em hoje, 7 dias e 30 dias para reduzir friccao.",
-        clearLimit: "Nao acelerar de um jeito que aperte seu caixa.",
+        clearLimit: "Não acelerar de um jeito que aperte seu caixa.",
         reason: "constancia com seguranca e o que leva ate o fim da meta",
         nextAction: primaryAction,
       }),
@@ -446,7 +446,7 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
     metrics,
   });
   const risk = inferRiskTone(input.advisor);
-  const primaryAction = actionByIntent(answer.intent)[0] ?? "Me diz o que voce quer fazer agora.";
+  const primaryAction = actionByIntent(answer.intent)[0] ?? "Me diz o que você quer fazer agora.";
 
   return {
     answer,
@@ -455,9 +455,9 @@ export function answerConsultorConversation(input: BuildConversationInput): Cons
       question: input.question,
       tone: decision.tone,
       baseMessage: decision.message,
-      scenarioReading: "Seu momento pede clareza e ritmo, nao impulso.",
+      scenarioReading: "Seu momento pede clareza e ritmo, não impulso.",
       practicalGuidance: "Protege caixa primeiro e acelera no que da retorno.",
-      clearLimit: "Nao sacrificar o essencial por ansiedade do curto prazo.",
+      clearLimit: "Não sacrificar o essencial por ansiedade do curto prazo.",
       reason: "disciplina no caixa abre espaco para crescer com menos pressao",
       nextAction: primaryAction,
     }),
