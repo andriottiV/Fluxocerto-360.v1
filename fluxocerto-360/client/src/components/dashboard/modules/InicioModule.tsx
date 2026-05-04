@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowDownCircle,
@@ -12,7 +12,6 @@ import {
   PieChart,
   ShieldAlert,
   Target,
-  TrendingUp,
   WalletCards,
 } from "lucide-react";
 
@@ -36,8 +35,67 @@ type InicioModuleProps = {
 };
 
 type BucketKey = "personal" | "business" | "reserve";
+type EvolutionRange = "7d" | "30d" | "month";
+
+type EvolutionRow = {
+  date: Date;
+  key: string;
+  label: string;
+  income: number;
+  expense: number;
+  reserve: number;
+  periodBalance: number;
+};
+
+type ChartPoint = {
+  x: number;
+  y: number;
+  value: number;
+  row: EvolutionRow;
+};
+
+type ProjectionPoint = {
+  x: number;
+  y: number;
+  value: number;
+  label: string;
+};
+
+type EvolutionSeries = {
+  rows: EvolutionRow[];
+  width: number;
+  height: number;
+  baseY: number;
+  incomePoints: ChartPoint[];
+  expensePoints: ChartPoint[];
+  reservePoints: ChartPoint[];
+  projectionPoints: ProjectionPoint[];
+  periodTotals: {
+    income: number;
+    expense: number;
+    balance: number;
+  };
+  reserveCurrent: number;
+  projectedNext7Days: number;
+  hasForecastData: boolean;
+  insight: string;
+};
 
 const DAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const EVOLUTION_COLORS = {
+  income: "#22c55e",
+  expense: "#fb7185",
+  reserve: "#22d3ee",
+  projection: "#e2e8f0",
+} as const;
+
+const EVOLUTION_RANGE_LABEL: Record<EvolutionRange, string> = {
+  "7d": "7 dias",
+  "30d": "30 dias",
+  month: "Mês",
+};
+
+const EVOLUTION_RANGES: EvolutionRange[] = ["7d", "30d", "month"];
 
 function monthLabel(now = new Date()) {
   return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" })
@@ -77,6 +135,60 @@ function areaPath(points: Array<{ x: number; y: number }>, baseY: number) {
   const last = points[points.length - 1];
   const first = points[0];
   return `${line} L${last.x},${baseY} L${first.x},${baseY} Z`;
+}
+
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function shortDateLabel(date: Date, compact = false) {
+  if (compact) return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
+  return DAY_LABELS[date.getDay()];
+}
+
+function getLatestTransactionDate(transactions: Transaction[]) {
+  return transactions.reduce<Date | null>((latest, tx) => {
+    const parsed = parseTransactionDate(tx);
+    if (!parsed) return latest;
+    return !latest || parsed.getTime() > latest.getTime() ? parsed : latest;
+  }, null);
+}
+
+function buildPeriodDays(range: EvolutionRange, anchorDate: Date) {
+  const anchor = startOfDay(anchorDate);
+  if (range === "month") {
+    const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
+    const days: Date[] = [];
+    for (let day = first; day.getTime() <= anchor.getTime(); day = addDays(day, 1)) {
+      days.push(startOfDay(day));
+    }
+    return days;
+  }
+
+  const length = range === "30d" ? 30 : 7;
+  return Array.from({ length }).map((_, offset) => startOfDay(addDays(anchor, offset - (length - 1))));
+}
+
+function clampChartValue(value: number) {
+  return Number.isFinite(value) ? value : 0;
 }
 
 function potBucketForTransaction(transaction: Transaction, pots: ReturnType<typeof useApp>["pots"]): BucketKey {
@@ -128,6 +240,8 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     adjustmentAccounts,
   } = useApp();
   const [, setLocation] = useLocation();
+  const [evolutionRange, setEvolutionRange] = useState<EvolutionRange>("7d");
+  const [activeChartKey, setActiveChartKey] = useState<string | null>(null);
 
   const onboardingData = useMemo(() => (user?.id ? getUserOnboardingData(user.id) : {}), [user?.id]);
   const realTransactions = useMemo(() => transactions.filter((tx) => !isOnboardingSeed(tx)), [transactions]);
@@ -233,22 +347,43 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
   }, [dashboardCosts, fixedCommitments, hasRealIncome, lucroLiquido, realPotBalances.reserve]);
 
   const evolutionSeries = useMemo(() => {
-    const latestTransactionDate = realTransactions.reduce<Date | null>((latest, tx) => {
-      const parsed = parseTransactionDate(tx);
-      if (!parsed) return latest;
-      return !latest || parsed.getTime() > latest.getTime() ? parsed : latest;
-    }, null);
-    const now = hasAnyRealMovement && latestTransactionDate ? latestTransactionDate : new Date();
-    const days = Array.from({ length: 7 }).map((_, offset) => {
-      const date = new Date(now);
-      date.setDate(now.getDate() - (6 - offset));
-      date.setHours(0, 0, 0, 0);
-      return date;
+    const latestTransactionDate = getLatestTransactionDate(realTransactions);
+    const anchorDate = hasAnyRealMovement && latestTransactionDate ? latestTransactionDate : new Date();
+    const days = buildPeriodDays(evolutionRange, anchorDate);
+    const firstDay = days[0] ?? startOfDay(anchorDate);
+    const lastDay = days[days.length - 1] ?? startOfDay(anchorDate);
+    const reservePot = pots.find((pot) => pot.type === PotType.RESERVE);
+    const sortedTransactions = [...realTransactions].sort((a, b) => {
+      const aTime = parseTransactionDate(a)?.getTime() ?? 0;
+      const bTime = parseTransactionDate(b)?.getTime() ?? 0;
+      return aTime - bTime;
     });
 
-    const rows = days.map((date) => {
-      const dayStart = date.getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000 - 1;
+    let reserveBalance = 0;
+    let transactionCursor = 0;
+
+    const applyReserveMovement = (transaction: Transaction) => {
+      if (transaction.type === TransactionType.INCOME) {
+        const distribution = transaction.potDistribution ?? potDistribution;
+        reserveBalance = Number((reserveBalance + (getTransactionNetAmount(transaction) * Number(distribution.reserve ?? 0)) / 100).toFixed(2));
+        return;
+      }
+
+      if (transaction.type === TransactionType.EXPENSE && potBucketForTransaction(transaction, pots) === "reserve") {
+        reserveBalance = Number((reserveBalance - Math.max(0, transaction.amount)).toFixed(2));
+      }
+    };
+
+    while (transactionCursor < sortedTransactions.length) {
+      const parsed = parseTransactionDate(sortedTransactions[transactionCursor]);
+      if (!parsed || parsed.getTime() >= firstDay.getTime()) break;
+      applyReserveMovement(sortedTransactions[transactionCursor]);
+      transactionCursor += 1;
+    }
+
+    const rows: EvolutionRow[] = days.map((date) => {
+      const dayStart = startOfDay(date).getTime();
+      const dayEnd = endOfDay(date).getTime();
       const dayTx = realTransactions.filter((tx) => {
         const parsed = parseTransactionDate(tx);
         if (!parsed) return false;
@@ -256,46 +391,109 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
         return time >= dayStart && time <= dayEnd;
       });
       const totals = calculateTotals(dayTx);
+
+      while (transactionCursor < sortedTransactions.length) {
+        const parsed = parseTransactionDate(sortedTransactions[transactionCursor]);
+        if (!parsed || parsed.getTime() > dayEnd) break;
+        applyReserveMovement(sortedTransactions[transactionCursor]);
+        transactionCursor += 1;
+      }
+
       return {
-        label: DAY_LABELS[date.getDay()],
-        income: totals.netIncome,
-        expense: totals.expense,
-        net: totals.periodBalance,
+        date,
+        key: dateKey(date),
+        label: shortDateLabel(date, evolutionRange !== "7d"),
+        income: Number(totals.income.toFixed(2)),
+        expense: Number(totals.expense.toFixed(2)),
+        reserve: Number(Math.max(0, reserveBalance).toFixed(2)),
+        periodBalance: Number((totals.netIncome - totals.expense).toFixed(2)),
       };
     });
 
-    const cumulative: number[] = [];
-    rows.reduce((sum, row, index) => {
-      const next = sum + row.net;
-      cumulative[index] = next;
-      return next;
-    }, 0);
+    const lastSevenRows = rows.slice(-7);
+    const dailyNetAverage =
+      lastSevenRows.length > 0
+        ? Number((lastSevenRows.reduce((sum, row) => sum + row.periodBalance, 0) / lastSevenRows.length).toFixed(2))
+        : 0;
+    const hasForecastData = rows.some((row) => row.income > 0 || row.expense > 0);
+    const projectedNext7Days = hasForecastData ? Number((dailyNetAverage * 7).toFixed(2)) : 0;
+    const lastRealRow = rows[rows.length - 1];
+    const projectionRows = hasForecastData && lastRealRow
+      ? Array.from({ length: 8 }).map((_, index) => ({
+          label: index === 0 ? lastRealRow.label : shortDateLabel(addDays(lastDay, index), true),
+          value: Number((lastRealRow.reserve + dailyNetAverage * index).toFixed(2)),
+        }))
+      : [];
 
-    const values = [...rows.map((row) => row.income), ...rows.map((row) => row.expense), ...cumulative];
+    const values = [
+      0,
+      ...rows.flatMap((row) => [row.income, row.expense, row.reserve]),
+      ...projectionRows.map((row) => row.value),
+    ].map(clampChartValue);
     const max = Math.max(...values, 1);
     const min = Math.min(...values, 0);
-    const width = 620;
-    const height = 250;
-    const paddingX = 26;
+    const width = Math.max(720, rows.length * 48 + projectionRows.length * 30);
+    const height = 280;
+    const paddingX = 42;
     const paddingY = 24;
     const usableW = width - paddingX * 2;
     const usableH = height - paddingY * 2;
+    const totalSlots = Math.max(rows.length + Math.max(projectionRows.length - 1, 0) - 1, 1);
     const yFor = (value: number) => paddingY + ((max - value) / Math.max(max - min, 1)) * usableH;
-    const xFor = (index: number) => paddingX + (usableW / Math.max(rows.length - 1, 1)) * index;
-    const balancePoints = cumulative.map((value, index) => ({ x: xFor(index), y: yFor(value) }));
+    const xForSlot = (index: number) => paddingX + (usableW / totalSlots) * index;
+    const toPoints = (key: "income" | "expense" | "reserve"): ChartPoint[] =>
+      rows.map((row, index) => ({
+        x: xForSlot(index),
+        y: yFor(row[key]),
+        value: row[key],
+        row,
+      }));
+    const projectionPoints: ProjectionPoint[] = projectionRows.map((row, index) => ({
+      x: xForSlot(rows.length - 1 + index),
+      y: yFor(row.value),
+      value: row.value,
+      label: row.label,
+    }));
+    const periodTotals = rows.reduce(
+      (totals, row) => ({
+        income: totals.income + row.income,
+        expense: totals.expense + row.expense,
+        balance: totals.balance + row.periodBalance,
+      }),
+      { income: 0, expense: 0, balance: 0 }
+    );
+    const reserveStarted = rows[0]?.reserve ?? 0;
+    const reserveCurrent = reservePot?.balance ?? rows[rows.length - 1]?.reserve ?? 0;
+    const reserveGrew = reserveCurrent > reserveStarted + 0.01;
+    const insight = !hasForecastData
+      ? "Adicione seus primeiros lançamentos para acompanhar sua evolução."
+      : periodTotals.expense > periodTotals.income
+        ? "Suas saídas passaram das entradas neste período."
+        : reserveGrew
+          ? "Sua reserva está crescendo."
+          : "Você está fechando o período positivo.";
 
     return {
       rows,
       width,
       height,
       baseY: yFor(0),
-      balancePath: pointsPath(balancePoints),
-      balanceAreaPath: areaPath(balancePoints, yFor(min)),
-      latest: cumulative[cumulative.length - 1] ?? 0,
-      best: rows.reduce((best, row) => (row.net > best.net ? row : best), rows[0] ?? { label: "-", net: 0 }),
-      dailyAverage: rows.reduce((sum, row) => sum + row.net, 0) / Math.max(rows.length, 1),
+      yFor,
+      incomePoints: toPoints("income"),
+      expensePoints: toPoints("expense"),
+      reservePoints: toPoints("reserve"),
+      projectionPoints,
+      periodTotals: {
+        income: Number(periodTotals.income.toFixed(2)),
+        expense: Number(periodTotals.expense.toFixed(2)),
+        balance: Number(periodTotals.balance.toFixed(2)),
+      },
+      reserveCurrent,
+      projectedNext7Days,
+      hasForecastData,
+      insight,
     };
-  }, [hasAnyRealMovement, realTransactions]);
+  }, [evolutionRange, hasAnyRealMovement, potDistribution, pots, realTransactions]);
 
   const potDistributionChart = useMemo(() => {
     const entries = [
@@ -482,57 +680,34 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
           <article className="fd-home-panel fd-home-chart-panel">
             <div className="fd-home-panel-head">
               <h3>Evolução financeira</h3>
-              <span>Últimos 7 dias</span>
+              <div className="fd-evolution-head-actions">
+                <span>Baseado nos seus lançamentos</span>
+                <div className="fd-evolution-range-tabs" aria-label="Filtro de período da evolução financeira">
+                  {EVOLUTION_RANGES.map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      className={evolutionRange === range ? "active" : ""}
+                      onClick={() => setEvolutionRange(range)}
+                    >
+                      {EVOLUTION_RANGE_LABEL[range]}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             {!hasAnyRealMovement ? (
               <div className="fd-home-empty">
                 <BarChart3 className="h-8 w-8" />
-                <strong>Sem movimentações ainda.</strong>
-                <p>Registre sua primeira entrada para gerar o gráfico.</p>
+                <strong>Adicione seus primeiros lançamentos.</strong>
+                <p>Assim você acompanha entradas, saídas, reserva e previsão sem misturar meta com saldo real.</p>
               </div>
             ) : (
-              <>
-                <div className="fd-home-chart">
-                  <svg viewBox={`0 0 ${evolutionSeries.width} ${evolutionSeries.height}`} role="img" aria-label="Evolução financeira">
-                    <defs>
-                      <linearGradient id="fd-home-balance-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="rgba(34,197,94,0.26)" />
-                        <stop offset="100%" stopColor="rgba(34,197,94,0.02)" />
-                      </linearGradient>
-                    </defs>
-                    {[0.2, 0.4, 0.6, 0.8].map((line) => (
-                      <line
-                        key={line}
-                        x1="26"
-                        x2={evolutionSeries.width - 26}
-                        y1={evolutionSeries.height * line}
-                        y2={evolutionSeries.height * line}
-                        stroke="rgba(148,163,184,0.12)"
-                        strokeDasharray="4 6"
-                      />
-                    ))}
-                    <line x1="26" x2={evolutionSeries.width - 26} y1={evolutionSeries.baseY} y2={evolutionSeries.baseY} stroke="rgba(148,163,184,0.22)" />
-                    <path d={evolutionSeries.balanceAreaPath} fill="url(#fd-home-balance-fill)" />
-                    <path d={evolutionSeries.balancePath} fill="none" stroke="#6ee75f" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <div className="fd-home-axis">
-                    {evolutionSeries.rows.map((row) => (
-                      <span key={row.label}>{row.label}</span>
-                    ))}
-                  </div>
-                </div>
-                <div className="fd-home-chart-stats">
-                  <div>
-                    <TrendingUp className="h-5 w-5" />
-                    <span>Melhor dia</span>
-                    <strong>{evolutionSeries.best.label}</strong>
-                  </div>
-                  <div>
-                    <span>Média diária</span>
-                    <strong>{formatCurrency(evolutionSeries.dailyAverage)}</strong>
-                  </div>
-                </div>
-              </>
+              <FinancialEvolutionContent
+                series={evolutionSeries}
+                activeKey={activeChartKey}
+                onActivate={setActiveChartKey}
+              />
             )}
           </article>
 
@@ -615,6 +790,170 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
         </footer>
       </section>
 
+    </>
+  );
+}
+
+function FinancialEvolutionContent({
+  series,
+  activeKey,
+  onActivate,
+}: {
+  series: EvolutionSeries;
+  activeKey: string | null;
+  onActivate: (key: string | null) => void;
+}) {
+  const activeRow = series.rows.find((row) => row.key === activeKey) ?? series.rows[series.rows.length - 1];
+  const legend = [
+    { label: "Entradas", color: EVOLUTION_COLORS.income },
+    { label: "Saídas", color: EVOLUTION_COLORS.expense },
+    { label: "Reserva", color: EVOLUTION_COLORS.reserve },
+    { label: "Previsão", color: EVOLUTION_COLORS.projection, dashed: true },
+  ];
+  const summary = [
+    { label: "Entradas", value: formatCurrency(series.periodTotals.income), tone: "success" },
+    { label: "Saídas", value: formatCurrency(series.periodTotals.expense), tone: "danger" },
+    { label: "Reserva", value: formatCurrency(series.reserveCurrent), tone: "info" },
+    { label: "Saldo do período (não é lucro líquido)", value: formatCurrency(series.periodTotals.balance), tone: "neutral" },
+  ];
+
+  return (
+    <div className="fd-evolution">
+      <div className="fd-evolution-chart-scroll">
+        <div className="fd-evolution-chart" style={{ minWidth: series.width }}>
+          <svg
+            viewBox={`0 0 ${series.width} ${series.height}`}
+            role="img"
+            aria-label="Evolução financeira com entradas, saídas, reserva e previsão"
+            onMouseLeave={() => onActivate(null)}
+          >
+            {[0.2, 0.4, 0.6, 0.8].map((line) => (
+              <line
+                key={line}
+                x1="42"
+                x2={series.width - 42}
+                y1={series.height * line}
+                y2={series.height * line}
+                stroke="rgba(148,163,184,0.13)"
+                strokeDasharray="4 8"
+              />
+            ))}
+            <line x1="42" x2={series.width - 42} y1={series.baseY} y2={series.baseY} stroke="rgba(226,255,242,0.24)" />
+            <EvolutionPolyline points={series.incomePoints} color={EVOLUTION_COLORS.income} />
+            <EvolutionPolyline points={series.expensePoints} color={EVOLUTION_COLORS.expense} />
+            <EvolutionPolyline points={series.reservePoints} color={EVOLUTION_COLORS.reserve} />
+            <EvolutionProjection points={series.projectionPoints} />
+            {series.rows.map((row, index) => {
+              const point = series.reservePoints[index];
+              if (!point) return null;
+              return (
+                <g key={row.key}>
+                  <rect
+                    x={point.x - 18}
+                    y="0"
+                    width="36"
+                    height={series.height}
+                    fill="transparent"
+                    onMouseEnter={() => onActivate(row.key)}
+                    onFocus={() => onActivate(row.key)}
+                  />
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r={activeRow?.key === row.key ? 5 : 3}
+                    fill={EVOLUTION_COLORS.reserve}
+                    stroke="#020617"
+                    strokeWidth="2"
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          <div className="fd-evolution-axis" style={{ gridTemplateColumns: `repeat(${series.rows.length}, minmax(34px, 1fr))` }}>
+            {series.rows.map((row) => (
+              <span key={row.key}>{row.label}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {activeRow ? (
+        <div className="fd-evolution-tooltip">
+          <strong>{activeRow.label}</strong>
+          <span>Entradas: {formatCurrency(activeRow.income)}</span>
+          <span>Saídas: {formatCurrency(activeRow.expense)}</span>
+          <span>Reserva: {formatCurrency(activeRow.reserve)}</span>
+        </div>
+      ) : null}
+
+      <div className="fd-evolution-legend">
+        {legend.map((item) => (
+          <span key={item.label}>
+            <i style={{ background: item.color, borderStyle: item.dashed ? "dashed" : "solid" }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="fd-evolution-summary">
+        {summary.map((item) => (
+          <article key={item.label} className={item.tone}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+          </article>
+        ))}
+      </div>
+
+      <div className="fd-evolution-insight">
+        <strong>{series.insight}</strong>
+        <p>
+          {series.hasForecastData
+            ? `Previsão para os próximos 7 dias: ${formatCurrency(series.projectedNext7Days)}. Use como tendência, não como valor garantido.`
+            : "Previsão disponível após alguns lançamentos."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function EvolutionPolyline({ points, color }: { points: ChartPoint[]; color: string }) {
+  if (points.length === 0) return null;
+  return (
+    <path
+      d={pointsPath(points)}
+      fill="none"
+      stroke={color}
+      strokeWidth="4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  );
+}
+
+function EvolutionProjection({ points }: { points: ProjectionPoint[] }) {
+  if (points.length < 2) return null;
+  return (
+    <>
+      <path
+        d={pointsPath(points)}
+        fill="none"
+        stroke={EVOLUTION_COLORS.projection}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray="7 9"
+        opacity="0.92"
+      />
+      <text
+        x={points[points.length - 1].x}
+        y={Math.max(18, points[points.length - 1].y - 12)}
+        fill={EVOLUTION_COLORS.projection}
+        fontSize="12"
+        fontWeight="800"
+        textAnchor="end"
+      >
+        Previsão
+      </text>
     </>
   );
 }

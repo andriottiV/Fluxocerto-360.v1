@@ -11,7 +11,9 @@ import {
   Sparkles,
   UserRound,
   UsersRound,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { useApp } from "@/contexts/AppContext";
 import {
@@ -28,10 +30,17 @@ import {
   type ClientEngagementLevel,
   type ClientFollowUpAlert,
 } from "@/lib/clientCRM";
+import type { Client } from "@/lib/types";
 import { formatDate, formatPhone } from "@/lib/utils";
 
 type FilterKey = "todos" | "vip" | "fiel" | "recorrente" | "novo" | "inativo" | "pendentes";
 type FunnelStage = "novo" | "proposta" | "falar" | "fechado";
+type ClientDraft = {
+  name: string;
+  phone: string;
+  note: string;
+  status: "novo" | "ativo" | "inativo";
+};
 
 type ClientCRMRow = {
   id: string;
@@ -76,6 +85,19 @@ const FUNNEL_COLUMNS: Array<{ id: FunnelStage; title: string; helper: string }> 
   { id: "falar", title: "Falar depois", helper: "Precisa de resposta" },
   { id: "fechado", title: "Fechado", helper: "Ja virou dinheiro" },
 ];
+
+const INITIAL_CLIENT_DRAFT: ClientDraft = {
+  name: "",
+  phone: "",
+  note: "",
+  status: "novo",
+};
+
+const CLIENT_STATUS_LABELS: Record<ClientDraft["status"], string> = {
+  novo: "Novo",
+  ativo: "Ativo",
+  inativo: "Inativo",
+};
 
 function normalizeText(value: string) {
   return value
@@ -200,11 +222,14 @@ function ClientCard({
 }
 
 export default function ClientesModule() {
-  const { clients, transactions } = useApp();
+  const { clients, transactions, addClient } = useApp();
   const [activeFilter, setActiveFilter] = useState<FilterKey>("todos");
   const [search, setSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [generatedMessages, setGeneratedMessages] = useState<Record<string, string>>({});
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [clientDraft, setClientDraft] = useState<ClientDraft>(INITIAL_CLIENT_DRAFT);
+  const [clientError, setClientError] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
   const rows = useMemo<ClientCRMRow[]>(() => {
@@ -334,6 +359,38 @@ export default function ClientesModule() {
     }));
   };
 
+  const closeClientModal = () => {
+    setIsClientModalOpen(false);
+    setClientDraft(INITIAL_CLIENT_DRAFT);
+    setClientError("");
+  };
+
+  const handleSaveClient = () => {
+    const name = clientDraft.name.trim();
+    if (!name) {
+      setClientError("Informe o nome do cliente para salvar.");
+      toast.error("Nome do cliente é obrigatório");
+      return;
+    }
+
+    const funnelLabel = CLIENT_STATUS_LABELS[clientDraft.status];
+    const note = clientDraft.note.trim();
+    const newClient: Client = {
+      id: `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      email: "",
+      phone: clientDraft.phone.trim(),
+      lastService: note ? `${funnelLabel} · ${note}` : funnelLabel,
+      totalSpent: 0,
+      status: clientDraft.status === "inativo" ? "inativo" : "ativo",
+    };
+
+    addClient(newClient);
+    setSelectedClientId(newClient.id);
+    closeClientModal();
+    toast.success("Cliente salvo com sucesso");
+  };
+
   return (
     <section className="fd-crm-page">
       <header className="fd-crm-header">
@@ -342,9 +399,9 @@ export default function ClientesModule() {
           <h2>Clientes & Vendas</h2>
           <p>Veja quem pode virar dinheiro e o que fazer hoje.</p>
         </div>
-        <button type="button" className="fd-crm-new-btn" onClick={() => searchRef.current?.focus()}>
+        <button type="button" className="fd-crm-new-btn" onClick={() => setIsClientModalOpen(true)}>
           <Plus className="h-4 w-4" />
-          Novo cliente
+          + Cliente
         </button>
       </header>
 
@@ -353,6 +410,10 @@ export default function ClientesModule() {
           <UsersRound className="h-9 w-9" />
           <strong>Nenhum cliente ainda</strong>
           <p>Cadastre clientes ou vincule entradas a clientes para acompanhar quem compra de você.</p>
+          <button type="button" className="fd-crm-empty-action" onClick={() => setIsClientModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Adicionar cliente
+          </button>
         </article>
       ) : (
         <>
@@ -549,6 +610,84 @@ export default function ClientesModule() {
           </section>
         </>
       )}
+
+      {isClientModalOpen ? (
+        <div className="fd-modal-backdrop fd-client-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-client-title">
+          <div className="fd-modal-card fd-client-modal-card">
+            <div className="fd-modal-head fd-client-modal-head">
+              <div>
+                <span>Novo contato</span>
+                <h3 id="new-client-title">Salvar cliente</h3>
+                <p>Cadastre o essencial agora e complete o histórico com os próximos lançamentos.</p>
+              </div>
+              <button type="button" className="fd-icon-btn" onClick={closeClientModal} aria-label="Fechar cadastro de cliente">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="fd-modal-grid fd-client-modal-grid">
+              <label className="fd-modal-full">
+                Nome do cliente
+                <input
+                  type="text"
+                  value={clientDraft.name}
+                  onChange={(event) => {
+                    setClientDraft((prev) => ({ ...prev, name: event.target.value }));
+                    if (clientError) setClientError("");
+                  }}
+                  placeholder="Ex.: Maria Souza"
+                  autoFocus
+                />
+              </label>
+
+              <label>
+                Telefone
+                <input
+                  type="tel"
+                  value={clientDraft.phone}
+                  onChange={(event) => setClientDraft((prev) => ({ ...prev, phone: event.target.value }))}
+                  placeholder="(00) 00000-0000"
+                />
+              </label>
+
+              <label>
+                Status / funil
+                <select
+                  value={clientDraft.status}
+                  onChange={(event) =>
+                    setClientDraft((prev) => ({ ...prev, status: event.target.value as ClientDraft["status"] }))
+                  }
+                >
+                  <option value="novo">Novo</option>
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
+              </label>
+
+              <label className="fd-modal-full">
+                Observação
+                <textarea
+                  value={clientDraft.note}
+                  onChange={(event) => setClientDraft((prev) => ({ ...prev, note: event.target.value }))}
+                  placeholder="Ex.: Veio por indicação, quer orçamento esta semana"
+                  rows={3}
+                />
+              </label>
+            </div>
+
+            {clientError ? <p className="fd-client-modal-error">{clientError}</p> : null}
+
+            <div className="fd-modal-actions fd-client-modal-actions">
+              <button type="button" className="fd-client-cancel-btn" onClick={closeClientModal}>
+                Cancelar
+              </button>
+              <button type="button" className="fd-crm-new-btn" onClick={handleSaveClient}>
+                Salvar cliente
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

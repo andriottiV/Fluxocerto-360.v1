@@ -11,14 +11,17 @@ import { hasSupabaseConfig } from "@/lib/supabaseClient";
 import {
   getCurrentSupabaseUser,
   getProfile,
+  getProfiles,
   signInWithEmail,
   signOutSupabase,
   signUpWithEmail,
+  updateProfileStatus,
   upsertProfile,
 } from "@/lib/supabaseRepositories";
 
 const AUTH_USERS_KEY = "fc360:auth:users:v2";
 const AUTH_SESSION_KEY = "fc360:auth:session:v1";
+const GLOBAL_USER_REGISTRY_KEY = "users_global_registry";
 const ONBOARDING_KEY_PREFIX = "fc360:onboarding:";
 const ONBOARDING_DATA_KEY_PREFIX = "fc360:onboarding:data:";
 const DEFAULT_ADMIN_EMAIL = "andriottidev@gmail.com";
@@ -151,7 +154,7 @@ function roleAndStatusForEmail(email: string) {
   if (ADMIN_EMAILS.has(normalizeEmail(email))) {
     return { role: "admin" as const, status: "active" as const };
   }
-  return { role: "tester" as const, status: "active" as const };
+  return { role: "user" as const, status: "active" as const };
 }
 
 function defaultBusinessName(name?: string) {
@@ -173,6 +176,8 @@ function buildAppUserFromSupabase(params: { id: string; email?: string | null; n
     status: access.status,
     createdAt,
     lastLoginAt: createdAt,
+    lastSeenAt: createdAt,
+    onboardingCompleted: false,
     approvedAt: access.role === "admin" ? createdAt : undefined,
     approvedBy: access.role === "admin" ? "system" : undefined,
     phone: "",
@@ -210,13 +215,20 @@ function coerceUserShape(user: Partial<StoredAuthUser>): StoredAuthUser {
     name: user.name || "Usuario",
     email,
     ...fallbackCredential,
-    role: user.role === "admin" || user.role === "tester" ? user.role : access.role,
+    role: user.role === "admin" || user.role === "tester" || user.role === "user" ? user.role : access.role,
     status:
       user.status === "active" || user.status === "pending" || user.status === "blocked"
         ? user.status
         : access.status,
     createdAt,
     lastLoginAt: user.lastLoginAt || createdAt,
+    lastSeenAt: user.lastSeenAt || user.lastLoginAt || createdAt,
+    onboardingCompleted:
+      typeof user.onboardingCompleted === "boolean"
+        ? user.onboardingCompleted
+        : user.id
+          ? readOnboardingCompleted(user.id)
+          : false,
     approvedAt: user.approvedAt,
     approvedBy: user.approvedBy,
     phone: user.phone,
@@ -244,6 +256,70 @@ function writeUsers(users: StoredAuthUser[]) {
   if (!isBrowser()) return;
   const safeUsers = users.map(({ password: _password, ...user }) => user);
   window.localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(safeUsers));
+}
+
+function readGlobalUserRegistry(): User[] {
+  if (!isBrowser()) return [];
+  const raw = window.localStorage.getItem(GLOBAL_USER_REGISTRY_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Partial<User>[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => toPublicUser(coerceUserShape(item as Partial<StoredAuthUser>)));
+  } catch {
+    return [];
+  }
+}
+
+function writeGlobalUserRegistry(users: User[]) {
+  if (!isBrowser()) return;
+  const unique = new Map<string, User>();
+  users.forEach((item) => {
+    if (!item.id) return;
+    unique.set(item.id, item);
+  });
+  window.localStorage.setItem(GLOBAL_USER_REGISTRY_KEY, JSON.stringify(Array.from(unique.values())));
+}
+
+function persistUserInGlobalRegistry(user: User, options?: { lastLogin?: boolean; onboardingCompleted?: boolean }) {
+  const now = nowIso();
+  const onboardingCompleted = options?.onboardingCompleted ?? readOnboardingCompleted(user.id);
+  const nextUser: User = {
+    ...user,
+    role: user.role ?? "user",
+    createdAt: user.createdAt || now,
+    lastLoginAt: options?.lastLogin ? now : user.lastLoginAt || now,
+    lastSeenAt: now,
+    onboardingCompleted,
+  };
+  const registry = readGlobalUserRegistry();
+  const existing = registry.find((item) => item.id === nextUser.id);
+  writeGlobalUserRegistry([
+    {
+      ...existing,
+      ...nextUser,
+      createdAt: existing?.createdAt ?? nextUser.createdAt,
+      lastLoginAt: nextUser.lastLoginAt,
+      lastSeenAt: nextUser.lastSeenAt,
+      onboardingCompleted,
+    },
+    ...registry.filter((item) => item.id !== nextUser.id),
+  ]);
+  return nextUser;
+}
+
+function mergeManagedUsers(primary: User[], fallback: User[]) {
+  const users = new Map<string, User>();
+  [...fallback, ...primary].forEach((item) => {
+    const onboardingCompleted = item.onboardingCompleted ?? readOnboardingCompleted(item.id);
+    users.set(item.id, {
+      ...users.get(item.id),
+      ...item,
+      onboardingCompleted,
+      lastSeenAt: item.lastSeenAt ?? item.lastLoginAt,
+    });
+  });
+  return Array.from(users.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 function writeSession(userId: string | null) {
@@ -275,6 +351,16 @@ function readOnboardingCompleted(userId: string) {
 function writeOnboardingCompleted(userId: string, completed: boolean) {
   if (!isBrowser()) return;
   window.localStorage.setItem(`${ONBOARDING_KEY_PREFIX}${userId}`, completed ? "true" : "false");
+  const users = readUsers();
+  const found = users.find((item) => item.id === userId);
+  if (found) {
+    const updated = { ...found, onboardingCompleted: completed };
+    writeUsers(users.map((item) => (item.id === userId ? updated : item)));
+    persistUserInGlobalRegistry(toPublicUser(updated), { onboardingCompleted: completed });
+  } else {
+    const registryUser = readGlobalUserRegistry().find((item) => item.id === userId);
+    if (registryUser) persistUserInGlobalRegistry(registryUser, { onboardingCompleted: completed });
+  }
 }
 
 function readOnboardingData(userId: string): OnboardingData {
@@ -469,6 +555,7 @@ export function bootstrapAuthUsers() {
     });
   });
   writeUsers(users);
+  writeGlobalUserRegistry(mergeManagedUsers(users.map(toPublicUser), readGlobalUserRegistry()));
 }
 
 export function authenticateUser(email: string, password: string): AuthResult {
@@ -480,13 +567,17 @@ export function authenticateUser(email: string, password: string): AuthResult {
     return { ok: false, error: "Email ou senha incorretos" };
   }
 
+  const now = nowIso();
   const updated: StoredAuthUser = {
     ...found,
     ...createPasswordCredential(password),
     password: undefined,
-    lastLoginAt: nowIso(),
+    lastLoginAt: now,
+    lastSeenAt: now,
+    onboardingCompleted: readOnboardingCompleted(found.id),
   };
   writeUsers(users.map((item) => (item.id === updated.id ? updated : item)));
+  persistUserInGlobalRegistry(toPublicUser(updated), { lastLogin: true, onboardingCompleted: updated.onboardingCompleted });
   writeSession(updated.id);
 
   return {
@@ -516,6 +607,8 @@ export function createAccount(input: CreateAccountInput): AuthResult {
     status: access.status,
     createdAt,
     lastLoginAt: createdAt,
+    lastSeenAt: createdAt,
+    onboardingCompleted: false,
     approvedAt: access.role === "admin" ? createdAt : undefined,
     approvedBy: access.role === "admin" ? "system" : undefined,
     phone: "",
@@ -527,6 +620,7 @@ export function createAccount(input: CreateAccountInput): AuthResult {
 
   writeUsers([newUser, ...users]);
   writeOnboardingCompleted(newUser.id, false);
+  persistUserInGlobalRegistry(toPublicUser(newUser), { lastLogin: true, onboardingCompleted: false });
   writeSession(newUser.id);
 
   return {
@@ -558,10 +652,12 @@ export function updateAuthUserProfile(nextUser: User) {
           businessName: nextUser.businessName,
           businessType: nextUser.businessType,
           cnpj: nextUser.cnpj,
+          onboardingCompleted: nextUser.onboardingCompleted ?? readOnboardingCompleted(nextUser.id),
         }
       : item
   );
   writeUsers(next);
+  persistUserInGlobalRegistry(nextUser, { onboardingCompleted: nextUser.onboardingCompleted });
 }
 
 export function markUserOnboardingCompleted(userId: string) {
@@ -586,10 +682,18 @@ export function restoreAuthSession(): { user: User; onboardingCompleted: boolean
     writeSession(null);
     return null;
   }
+  const now = nowIso();
+  const updated = {
+    ...found,
+    lastSeenAt: now,
+    onboardingCompleted: readOnboardingCompleted(found.id),
+  };
+  writeUsers(users.map((item) => (item.id === updated.id ? updated : item)));
+  persistUserInGlobalRegistry(toPublicUser(updated), { onboardingCompleted: updated.onboardingCompleted });
 
   return {
-    user: toPublicUser(found),
-    onboardingCompleted: readOnboardingCompleted(found.id),
+    user: toPublicUser(updated),
+    onboardingCompleted: updated.onboardingCompleted,
   };
 }
 
@@ -629,9 +733,20 @@ export function clearUserOnboardingData(userId: string) {
 
 export function listManagedUsers(requester: User): User[] {
   if (!canAccessAdmin(requester)) return [];
-  return readUsers()
-    .map(toPublicUser)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return mergeManagedUsers(readUsers().map(toPublicUser), readGlobalUserRegistry());
+}
+
+export async function listManagedUsersFromBestSource(requester: User): Promise<User[]> {
+  if (!canAccessAdmin(requester)) return [];
+  const localUsers = listManagedUsers(requester);
+  if (!hasSupabaseConfig) return localUsers;
+
+  const remote = await getProfiles();
+  if (remote.error || !remote.data) return localUsers;
+
+  const merged = mergeManagedUsers(remote.data, localUsers);
+  writeGlobalUserRegistry(merged);
+  return merged;
 }
 
 export function updateUserStatus(
@@ -644,7 +759,8 @@ export function updateUserStatus(
   }
 
   const users = readUsers();
-  const target = users.find((item) => item.id === targetUserId);
+  const registry = readGlobalUserRegistry();
+  const target = users.find((item) => item.id === targetUserId) ?? registry.find((item) => item.id === targetUserId);
   if (!target) return { ok: false, error: "Usuário não encontrado" };
   if (isAdmin(target) && status === "blocked") {
     return { ok: false, error: "Não é permitido bloquear administradores" };
@@ -653,18 +769,24 @@ export function updateUserStatus(
   const approvedAt = status === "active" ? target.approvedAt ?? nowIso() : target.approvedAt;
   const approvedBy = status === "active" ? target.approvedBy ?? requester.email : target.approvedBy;
 
-  writeUsers(
-    users.map((item) =>
-      item.id === targetUserId
-        ? {
-            ...item,
-            status,
-            approvedAt,
-            approvedBy,
-          }
-        : item
-    )
-  );
+  if (users.some((item) => item.id === targetUserId)) {
+    writeUsers(
+      users.map((item) =>
+        item.id === targetUserId
+          ? {
+              ...item,
+              status,
+              approvedAt,
+              approvedBy,
+            }
+          : item
+      )
+    );
+  }
+  persistUserInGlobalRegistry({ ...target, status, approvedAt, approvedBy });
+  if (hasSupabaseConfig) {
+    void updateProfileStatus(targetUserId, status);
+  }
 
   return { ok: true };
 }
@@ -688,9 +810,17 @@ async function loginWithSupabase(email: string, password: string): Promise<AuthR
       email: result.data.user.email,
       name: result.data.user.user_metadata?.name,
     });
-    await upsertProfile(appUser);
   }
+  const now = nowIso();
+  appUser = {
+    ...appUser,
+    lastLoginAt: now,
+    lastSeenAt: now,
+    onboardingCompleted: readOnboardingCompleted(appUser.id),
+  };
+  await upsertProfile(appUser);
 
+  persistUserInGlobalRegistry(appUser, { lastLogin: true, onboardingCompleted: appUser.onboardingCompleted });
   writeSession(appUser.id);
   return {
     ok: true,
@@ -712,13 +842,17 @@ async function registerWithSupabase(input: CreateAccountInput): Promise<AuthResu
     email: result.data.user.email ?? normalizedEmail,
     name: input.name,
   });
-  const profile = await upsertProfile(appUser);
+  const profile = await upsertProfile({
+    ...appUser,
+    onboardingCompleted: false,
+  });
 
   if (profile.error) {
     return { ok: false, error: "Conta criada, mas não foi possível preparar o perfil" };
   }
 
   writeOnboardingCompleted(appUser.id, false);
+  persistUserInGlobalRegistry(profile.data ?? appUser, { lastLogin: true, onboardingCompleted: false });
   writeSession(appUser.id);
 
   return {
@@ -744,9 +878,15 @@ async function restoreSupabaseSession(): Promise<{ user: User; onboardingComplet
       email: current.data.email,
       name: current.data.user_metadata?.name,
     });
-    await upsertProfile(appUser);
   }
+  appUser = {
+    ...appUser,
+    lastSeenAt: nowIso(),
+    onboardingCompleted: readOnboardingCompleted(appUser.id),
+  };
+  await upsertProfile(appUser);
 
+  persistUserInGlobalRegistry(appUser, { onboardingCompleted: appUser.onboardingCompleted });
   writeSession(appUser.id);
   return {
     user: appUser,

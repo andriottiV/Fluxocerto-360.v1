@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Shield, UserCheck, UserX } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
-import { getConfiguredAdminEmails, listManagedUsers, updateUserStatus } from "@/lib/auth";
+import { getConfiguredAdminEmails, listManagedUsersFromBestSource, updateUserStatus } from "@/lib/auth";
 import { canAccessAdmin } from "@/lib/authz";
 import { User } from "@/lib/types";
 
@@ -20,7 +20,9 @@ function formatDateTime(value?: string) {
 }
 
 function roleLabel(role: User["role"]) {
-  return role === "admin" ? "Admin" : "Tester";
+  if (role === "admin") return "Admin";
+  if (role === "tester") return "Tester";
+  return "User";
 }
 
 function statusLabel(status: User["status"]) {
@@ -33,10 +35,22 @@ export default function AdministraçãoModule() {
   const { user } = useApp();
   const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState("");
+  const [users, setUsers] = useState<User[]>([]);
 
-  const users = useMemo(() => {
-    if (!user) return [];
-    return listManagedUsers(user);
+  useEffect(() => {
+    let cancelled = false;
+    if (!user || !canAccessAdmin(user)) {
+      setUsers([]);
+      return;
+    }
+
+    listManagedUsersFromBestSource(user).then((items) => {
+      if (!cancelled) setUsers(items);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user, refreshKey]);
 
   const filteredUsers = useMemo(() => {
@@ -148,6 +162,7 @@ export default function AdministraçãoModule() {
                 <th>Role</th>
                 <th>Status</th>
                 <th>Cadastro</th>
+                <th>Onboarding</th>
                 <th>Último acesso</th>
                 <th>Ações</th>
               </tr>
@@ -180,7 +195,8 @@ export default function AdministraçãoModule() {
                     </span>
                   </td>
                   <td>{formatDateTime(item.createdAt)}</td>
-                  <td>{formatDateTime(item.lastLoginAt)}</td>
+                  <td>{item.onboardingCompleted ? "Completo" : "Pendente"}</td>
+                  <td>{formatDateTime(item.lastSeenAt ?? item.lastLoginAt)}</td>
                   <td>
                     <div className="fd-admin-actions">
                       <button

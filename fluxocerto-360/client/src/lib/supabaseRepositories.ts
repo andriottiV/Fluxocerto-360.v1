@@ -12,12 +12,15 @@ type SupabaseProfile = {
   email?: string | null;
   role?: User["role"] | null;
   status?: User["status"] | null;
+  onboarding_completed?: boolean | null;
   phone?: string | null;
   avatar?: string | null;
   business_name?: string | null;
   business_type?: string | null;
   cnpj?: string | null;
   created_at?: string | null;
+  last_login_at?: string | null;
+  last_seen_at?: string | null;
   updated_at?: string | null;
 };
 
@@ -40,7 +43,7 @@ function mapProfileToUser(profile: SupabaseProfile): User {
     id: profile.id,
     name: profile.name ?? "Usuário",
     email: profile.email ?? "",
-    role: profile.role === "admin" ? "admin" : "tester",
+    role: profile.role === "admin" ? "admin" : profile.role === "tester" ? "tester" : "user",
     status:
       profile.status === "active" || profile.status === "pending" || profile.status === "blocked"
         ? profile.status
@@ -51,7 +54,9 @@ function mapProfileToUser(profile: SupabaseProfile): User {
     businessType: profile.business_type ?? undefined,
     cnpj: profile.cnpj ?? undefined,
     createdAt,
-    lastLoginAt: createdAt,
+    lastLoginAt: profile.last_login_at ?? createdAt,
+    lastSeenAt: profile.last_seen_at ?? profile.last_login_at ?? createdAt,
+    onboardingCompleted: profile.onboarding_completed ?? undefined,
   };
 }
 
@@ -62,12 +67,15 @@ function mapUserToProfile(user: User): SupabaseProfile {
     email: user.email,
     role: user.role,
     status: user.status,
+    onboarding_completed: user.onboardingCompleted ?? false,
     phone: user.phone ?? null,
     avatar: user.avatar ?? null,
     business_name: user.businessName ?? null,
     business_type: user.businessType ?? null,
     cnpj: user.cnpj ?? null,
     created_at: user.createdAt,
+    last_login_at: user.lastLoginAt,
+    last_seen_at: user.lastSeenAt ?? user.lastLoginAt,
     updated_at: new Date().toISOString(),
   };
 }
@@ -189,6 +197,36 @@ export async function upsertProfile(user: User): Promise<RepositoryResult<User>>
 
   return {
     data: data ? mapProfileToUser(data as SupabaseProfile) : null,
+    error: error?.message ?? null,
+  };
+}
+
+export async function getProfiles(): Promise<RepositoryResult<User[]>> {
+  const configured = assertSupabaseConfigured();
+  if (!configured.ok) return localFallback<User[]>([]);
+
+  const { data, error } = await configured.supabase
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  return {
+    data: (data ?? []).map((item) => mapProfileToUser(item as SupabaseProfile)),
+    error: error?.message ?? null,
+  };
+}
+
+export async function updateProfileStatus(userId: string, status: User["status"]): Promise<RepositoryResult<boolean>> {
+  const configured = assertSupabaseConfigured();
+  if (!configured.ok) return localFallback<boolean>(false);
+
+  const { error } = await configured.supabase
+    .from("profiles")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  return {
+    data: !error,
     error: error?.message ?? null,
   };
 }

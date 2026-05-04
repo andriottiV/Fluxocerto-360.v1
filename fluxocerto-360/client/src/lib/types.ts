@@ -22,7 +22,7 @@ export enum PotType {
   RESERVE = "reserva",
 }
 
-export type UserRole = "admin" | "tester";
+export type UserRole = "admin" | "tester" | "user";
 export type UserStatus = "pending" | "active" | "blocked";
 
 export type AccountTypeLink = "pf" | "pj";
@@ -55,6 +55,8 @@ export interface User {
   cnpj?: string;
   createdAt: string;
   lastLoginAt: string;
+  lastSeenAt?: string;
+  onboardingCompleted?: boolean;
   approvedAt?: string;
   approvedBy?: string;
 }
@@ -71,6 +73,7 @@ export interface AdminManagedUser {
   plan: AdminUserPlan;
   createdAt: string;
   lastLogin: string;
+  lastSeenAt?: string;
   onboardingCompleted: boolean;
 }
 

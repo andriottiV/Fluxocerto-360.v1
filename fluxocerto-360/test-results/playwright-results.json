@@ -71,13 +71,13 @@
   },
   "suites": [
     {
-      "title": "fluxocerto360.audit.spec.ts",
-      "file": "fluxocerto360.audit.spec.ts",
+      "title": "admin-user-registry.spec.ts",
+      "file": "admin-user-registry.spec.ts",
       "column": 0,
       "line": 0,
       "specs": [
         {
-          "title": "auditoria completa do FluxoCerto360",
+          "title": "admin ve usuario registrado e lastSeenAt atualiza ao abrir o app",
           "ok": true,
           "tags": [],
           "tests": [
@@ -92,12 +92,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 63709,
+                  "duration": 2060,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-05-04T18:40:57.402Z",
+                  "startTime": "2026-05-04T19:26:57.503Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -105,55 +105,13 @@
               "status": "expected"
             }
           ],
-          "id": "9c17aca683c00fd42cd0-4d09271d71f6926a815c",
-          "file": "fluxocerto360.audit.spec.ts",
-          "line": 652,
-          "column": 1
-        }
-      ]
-    },
-    {
-      "title": "onboarding-new-flow.spec.ts",
-      "file": "onboarding-new-flow.spec.ts",
-      "column": 0,
-      "line": 0,
-      "specs": [
-        {
-          "title": "novo onboarding personaliza dashboard e consultor sem misturar meta com saldo",
-          "ok": true,
-          "tags": [],
-          "tests": [
-            {
-              "timeout": 240000,
-              "annotations": [],
-              "expectedStatus": "passed",
-              "projectId": "qa-chromium",
-              "projectName": "qa-chromium",
-              "results": [
-                {
-                  "workerIndex": 0,
-                  "parallelIndex": 0,
-                  "status": "passed",
-                  "duration": 6374,
-                  "errors": [],
-                  "stdout": [],
-                  "stderr": [],
-                  "retry": 0,
-                  "startTime": "2026-05-04T18:42:01.427Z",
-                  "annotations": [],
-                  "attachments": []
-                }
-              ],
-              "status": "expected"
-            }
-          ],
-          "id": "c71e99269db4c26e7d19-3906523c93d976735adb",
-          "file": "onboarding-new-flow.spec.ts",
-          "line": 168,
+          "id": "e155c0ff91334d0896d9-ba31d73dea0de773cede",
+          "file": "admin-user-registry.spec.ts",
+          "line": 60,
           "column": 1
         },
         {
-          "title": "usuário antigo recebe fallback e entrada real futura respeita taxa, divisão líquida e saída por pote",
+          "title": "usuario comum nao acessa administracao",
           "ok": true,
           "tags": [],
           "tests": [
@@ -168,12 +126,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 9430,
+                  "duration": 1236,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-05-04T18:42:07.830Z",
+                  "startTime": "2026-05-04T19:26:59.678Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -181,9 +139,9 @@
               "status": "expected"
             }
           ],
-          "id": "c71e99269db4c26e7d19-356b53b50aa88c5c8b51",
-          "file": "onboarding-new-flow.spec.ts",
-          "line": 207,
+          "id": "e155c0ff91334d0896d9-f554c71cbb68310d378d",
+          "file": "admin-user-registry.spec.ts",
+          "line": 88,
           "column": 1
         }
       ]
@@ -191,9 +149,9 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-05-04T18:40:56.212Z",
-    "duration": 82032.47899999999,
-    "expected": 3,
+    "startTime": "2026-05-04T19:26:56.577Z",
+    "duration": 4686.518,
+    "expected": 2,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0
