@@ -171,6 +171,17 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     [adjustmentAccounts, pots]
   );
   const metaMensal = Number(onboardingData.metaMensal ?? 0);
+  const estimatedGrossMonthlyRevenue = useMemo(() => {
+    const savedProjection = Number(onboardingData.estimatedGrossMonthlyRevenue ?? onboardingData.projectedMonthlyGrossRevenue ?? 0);
+    if (Number.isFinite(savedProjection) && savedProjection > 0) return savedProjection;
+    if (metaMensal <= 0 || potDistribution.personal <= 0) return 0;
+    return Number((metaMensal / (potDistribution.personal / 100)).toFixed(2));
+  }, [metaMensal, onboardingData.estimatedGrossMonthlyRevenue, onboardingData.projectedMonthlyGrossRevenue, potDistribution.personal]);
+  const dailyRevenueTarget = useMemo(() => {
+    const savedProjection = Number(onboardingData.dailyRevenueTarget ?? onboardingData.projectedDailyGrossRevenue ?? 0);
+    if (Number.isFinite(savedProjection) && savedProjection > 0) return savedProjection;
+    return Number((estimatedGrossMonthlyRevenue / 22).toFixed(2));
+  }, [estimatedGrossMonthlyRevenue, onboardingData.dailyRevenueTarget, onboardingData.projectedDailyGrossRevenue]);
   const lucroLiquido = hasRealIncome ? Number((dashboardTotals.income - dashboardTotals.fees - dashboardCosts).toFixed(2)) : 0;
   const personalFreeMoney = personalFreeMoneyDetails.personalFreeMoney;
   const hasPersonalDeficit = personalFreeMoneyDetails.deficit > 0;
@@ -381,6 +392,20 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
           : "Saldo pessoal ainda zerado.",
       icon: WalletCards,
       tone: "info",
+    },
+    {
+      label: "Sua meta diária inteligente",
+      value: formatCurrency(dailyRevenueTarget),
+      helper: "Essa é a média diária estimada para aproximar você da sua meta mensal.",
+      icon: Target,
+      tone: "info",
+    },
+    {
+      label: "Meta mensal de faturamento bruto",
+      value: formatCurrency(estimatedGrossMonthlyRevenue),
+      helper: "Meta de faturamento bruto mensal. Não é saldo disponível.",
+      icon: PieChart,
+      tone: "success",
     },
   ];
 

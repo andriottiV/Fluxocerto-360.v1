@@ -92,12 +92,12 @@
                   "workerIndex": 0,
                   "parallelIndex": 0,
                   "status": "passed",
-                  "duration": 68095,
+                  "duration": 63709,
                   "errors": [],
                   "stdout": [],
                   "stderr": [],
                   "retry": 0,
-                  "startTime": "2026-05-01T12:51:23.657Z",
+                  "startTime": "2026-05-04T18:40:57.402Z",
                   "annotations": [],
                   "attachments": []
                 }
@@ -107,7 +107,83 @@
           ],
           "id": "9c17aca683c00fd42cd0-4d09271d71f6926a815c",
           "file": "fluxocerto360.audit.spec.ts",
-          "line": 651,
+          "line": 652,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "onboarding-new-flow.spec.ts",
+      "file": "onboarding-new-flow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "novo onboarding personaliza dashboard e consultor sem misturar meta com saldo",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "qa-chromium",
+              "projectName": "qa-chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6374,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-05-04T18:42:01.427Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c71e99269db4c26e7d19-3906523c93d976735adb",
+          "file": "onboarding-new-flow.spec.ts",
+          "line": 168,
+          "column": 1
+        },
+        {
+          "title": "usuário antigo recebe fallback e entrada real futura respeita taxa, divisão líquida e saída por pote",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 240000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "qa-chromium",
+              "projectName": "qa-chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 9430,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-05-04T18:42:07.830Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c71e99269db4c26e7d19-356b53b50aa88c5c8b51",
+          "file": "onboarding-new-flow.spec.ts",
+          "line": 207,
           "column": 1
         }
       ]
@@ -115,9 +191,9 @@
   ],
   "errors": [],
   "stats": {
-    "startTime": "2026-05-01T12:51:20.141Z",
-    "duration": 73200.451,
-    "expected": 1,
+    "startTime": "2026-05-04T18:40:56.212Z",
+    "duration": 82032.47899999999,
+    "expected": 3,
     "skipped": 0,
     "unexpected": 0,
     "flaky": 0

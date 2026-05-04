@@ -223,20 +223,21 @@ async function createAccountAndOnboard(page: Page, testInfo: TestInfo) {
   await screenshot(page, "03-onboarding-diagnostico", testInfo);
   await auditPageBasics(page, "Onboarding - Diagnóstico");
 
-  await page.getByRole("button", { name: /Tudo misturado/i }).click();
+  await page.getByRole("button", { name: /Misturo tudo/i }).click();
   await page.getByRole("button", { name: /Continuar/i }).click();
-  await expect(page.getByRole("heading", { name: /Sua opera/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /olhando sua vida no geral/i })).toBeVisible();
   await screenshot(page, "04-onboarding-estrutura", testInfo);
-  await page.getByRole("button", { name: /Sim, custo alto/i }).click();
+  await page.getByRole("button", { name: /Meu dinheiro vive apertado/i }).click();
   await page.getByRole("button", { name: /Continuar/i }).click();
 
   await expect(page.getByRole("heading", { name: /Quanto/i })).toBeVisible();
   await page.getByPlaceholder("R$ 0,00").fill("500000");
+  await page.getByRole("button", { name: /^Quase$/i }).click();
   await screenshot(page, "05-onboarding-meta", testInfo);
   await page.getByRole("button", { name: /Continuar/i }).click();
-  await expect(page.getByText(/Plano de potes pronto/i)).toBeVisible();
+  await expect(page.getByText(/Seu dinheiro agora tem direção/i)).toBeVisible();
   await screenshot(page, "06-onboarding-ativacao", testInfo);
-  await page.getByRole("button", { name: /Ativar meu Fluxo/i }).click();
+  await page.getByRole("button", { name: /Começar a organizar meu dinheiro/i }).click();
 
   await page.waitForURL(/\/dashboard/, { timeout: 15_000 }).catch(() => undefined);
   await expect(page.getByText(/Aqui est/i).first()).toBeVisible({ timeout: 15_000 });

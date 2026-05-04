@@ -62,6 +62,13 @@ const STATE_COPY: Record<FluxFinancialState, { status: string; tone: FluxSeverit
   },
 };
 
+const ONBOARDING_PAIN_MESSAGE: Record<string, string> = {
+  mix_money: "Seu primeiro passo é separar o que é seu do que é do negócio.",
+  money_disappears: "Seu primeiro passo é entender para onde o dinheiro está indo.",
+  no_profit: "Seu primeiro passo é enxergar seu lucro real sem achismo.",
+  no_reserve: "Seu primeiro passo é construir segurança financeira aos poucos.",
+};
+
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -118,9 +125,9 @@ export default function ConsultorModule() {
     stop: stopVoice,
   } = useBrowserSpeechRecognition("pt-BR");
 
-  const advisorContext = useMemo<FluxAdvisorContext>(() => {
-    const onboardingData = user?.id ? getUserOnboardingData(user.id) : {};
+  const onboardingData = useMemo(() => (user?.id ? getUserOnboardingData(user.id) : {}), [user?.id]);
 
+  const advisorContext = useMemo<FluxAdvisorContext>(() => {
     return {
       transactions: scopeByUser(transactions, user?.id),
       pots: scopeByUser(pots, user?.id),
@@ -130,7 +137,7 @@ export default function ConsultorModule() {
       potDistribution,
       metaMensal: onboardingData.metaMensal ?? 0,
     };
-  }, [adjustmentAccounts, costs, paymentAccounts, potDistribution, pots, transactions, user?.id]);
+  }, [adjustmentAccounts, costs, onboardingData.metaMensal, paymentAccounts, potDistribution, pots, transactions, user?.id]);
 
   const promptContext = useMemo(() => buildFluxPromptContext(advisorContext), [advisorContext]);
   const availableToday = useMemo(() => calculateAvailableToday(advisorContext), [advisorContext]);
@@ -142,6 +149,25 @@ export default function ConsultorModule() {
   const stateCopy = STATE_COPY[financialState];
   const hasRealIncome = promptContext.entradasReais > 0;
   const dynamicButtonLabel = hasRealIncome ? "Ver onde estou gastando" : "Registrar primeira entrada";
+  const dailyRevenueTarget = useMemo(() => {
+    const savedProjection = Number(onboardingData.dailyRevenueTarget ?? onboardingData.projectedDailyGrossRevenue ?? 0);
+    if (Number.isFinite(savedProjection) && savedProjection > 0) return savedProjection;
+
+    const personalMonthlyGoal = Number(onboardingData.personalMonthlyGoal ?? onboardingData.metaMensal ?? 0);
+    const personalPercentage = Number(potDistribution.personal);
+    if (!Number.isFinite(personalMonthlyGoal) || personalMonthlyGoal <= 0 || personalPercentage <= 0) return 0;
+
+    return Number(((personalMonthlyGoal / (personalPercentage / 100)) / 22).toFixed(2));
+  }, [onboardingData.dailyRevenueTarget, onboardingData.metaMensal, onboardingData.personalMonthlyGoal, onboardingData.projectedDailyGrossRevenue, potDistribution.personal]);
+  const onboardingInitialMessage = useMemo(() => {
+    const painMessage = ONBOARDING_PAIN_MESSAGE[String(onboardingData.financialPain ?? "")] ?? "Seu primeiro passo é registrar seus dados reais com consistência.";
+    const targetMessage =
+      dailyRevenueTarget > 0
+        ? `Para buscar sua meta, sua média diária estimada é de ${formatCurrency(dailyRevenueTarget)} de faturamento bruto.`
+        : "Quando sua meta estiver definida, eu mostro sua média diária estimada de faturamento bruto.";
+
+    return `${painMessage}\n${targetMessage}`;
+  }, [dailyRevenueTarget, onboardingData.financialPain]);
 
   useEffect(() => {
     if (!voiceTranscript) return;
@@ -327,7 +353,8 @@ export default function ConsultorModule() {
         <div className="fd-flux-message-list">
           {messages.length === 0 ? (
             <div className="fd-flux-empty-chat">
-              <strong>Me pergunta qualquer coisa. Eu respondo com base no seu dinheiro real.</strong>
+              <strong>{onboardingInitialMessage.split("\n")[0]}</strong>
+              <p>{onboardingInitialMessage.split("\n")[1]}</p>
               <div className="fd-flux-empty-suggestions">
                 {["Posso gastar hoje?", "Quanto tenho em caixa?", "Onde estou perdendo dinheiro?"].map((question) => (
                   <button

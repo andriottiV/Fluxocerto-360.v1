@@ -52,6 +52,16 @@ export type OnboardingData = {
   usageMode?: OnboardingUsageMode;
   monthlyIncome?: number;
   financialMode?: OnboardingFinancialMode;
+  financialPain?: "mix_money" | "money_disappears" | "no_profit" | "no_reserve";
+  financialStructure?: "apertado" | "equilibrado" | "folga";
+  goalConfidence?: "yes" | "almost" | "far";
+  personalMonthlyGoal?: number;
+  estimatedGrossMonthlyRevenue?: number;
+  weeklyRevenueTarget?: number;
+  dailyRevenueTarget?: number;
+  projectedMonthlyGrossRevenue?: number;
+  projectedWeeklyGrossRevenue?: number;
+  projectedDailyGrossRevenue?: number;
   debts?: OnboardingDebtInput[];
   fixedExpenses?: OnboardingFixedExpenseInput[];
   flag_separacao?: boolean;
@@ -290,6 +300,65 @@ function readOnboardingData(userId: string): OnboardingData {
       parsed.financialMode === "growth"
         ? parsed.financialMode
         : undefined;
+    const financialPain =
+      parsed.financialPain === "mix_money" ||
+      parsed.financialPain === "money_disappears" ||
+      parsed.financialPain === "no_profit" ||
+      parsed.financialPain === "no_reserve"
+        ? parsed.financialPain
+        : undefined;
+    const financialStructure =
+      parsed.financialStructure === "apertado" ||
+      parsed.financialStructure === "equilibrado" ||
+      parsed.financialStructure === "folga"
+        ? parsed.financialStructure
+        : undefined;
+    const goalConfidence =
+      parsed.goalConfidence === "yes" || parsed.goalConfidence === "almost" || parsed.goalConfidence === "far"
+        ? parsed.goalConfidence
+        : undefined;
+    const personalMonthlyGoal =
+      typeof parsed.personalMonthlyGoal === "number" &&
+      Number.isFinite(parsed.personalMonthlyGoal) &&
+      parsed.personalMonthlyGoal >= 0
+        ? parsed.personalMonthlyGoal
+        : undefined;
+    const estimatedGrossMonthlyRevenue =
+      typeof parsed.estimatedGrossMonthlyRevenue === "number" &&
+      Number.isFinite(parsed.estimatedGrossMonthlyRevenue) &&
+      parsed.estimatedGrossMonthlyRevenue >= 0
+        ? parsed.estimatedGrossMonthlyRevenue
+        : undefined;
+    const weeklyRevenueTarget =
+      typeof parsed.weeklyRevenueTarget === "number" &&
+      Number.isFinite(parsed.weeklyRevenueTarget) &&
+      parsed.weeklyRevenueTarget >= 0
+        ? parsed.weeklyRevenueTarget
+        : undefined;
+    const dailyRevenueTarget =
+      typeof parsed.dailyRevenueTarget === "number" &&
+      Number.isFinite(parsed.dailyRevenueTarget) &&
+      parsed.dailyRevenueTarget >= 0
+        ? parsed.dailyRevenueTarget
+        : undefined;
+    const projectedMonthlyGrossRevenue =
+      typeof parsed.projectedMonthlyGrossRevenue === "number" &&
+      Number.isFinite(parsed.projectedMonthlyGrossRevenue) &&
+      parsed.projectedMonthlyGrossRevenue >= 0
+        ? parsed.projectedMonthlyGrossRevenue
+        : undefined;
+    const projectedWeeklyGrossRevenue =
+      typeof parsed.projectedWeeklyGrossRevenue === "number" &&
+      Number.isFinite(parsed.projectedWeeklyGrossRevenue) &&
+      parsed.projectedWeeklyGrossRevenue >= 0
+        ? parsed.projectedWeeklyGrossRevenue
+        : undefined;
+    const projectedDailyGrossRevenue =
+      typeof parsed.projectedDailyGrossRevenue === "number" &&
+      Number.isFinite(parsed.projectedDailyGrossRevenue) &&
+      parsed.projectedDailyGrossRevenue >= 0
+        ? parsed.projectedDailyGrossRevenue
+        : undefined;
     const debts = Array.isArray(parsed.debts)
       ? parsed.debts
           .map((debt) => ({
@@ -350,6 +419,16 @@ function readOnboardingData(userId: string): OnboardingData {
       usageMode,
       monthlyIncome: metaMensal !== undefined ? undefined : monthlyIncome,
       financialMode,
+      financialPain,
+      financialStructure,
+      goalConfidence,
+      personalMonthlyGoal,
+      estimatedGrossMonthlyRevenue,
+      weeklyRevenueTarget,
+      dailyRevenueTarget,
+      projectedMonthlyGrossRevenue,
+      projectedWeeklyGrossRevenue,
+      projectedDailyGrossRevenue,
       debts,
       fixedExpenses,
       flag_separacao: typeof parsed.flag_separacao === "boolean" ? parsed.flag_separacao : undefined,
