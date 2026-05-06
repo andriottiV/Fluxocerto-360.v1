@@ -6,12 +6,14 @@ import {
   Boxes,
   Settings,
   ShieldCheck,
+  CalendarClock,
   type LucideIcon,
 } from "lucide-react";
 
 export type DashboardRoutePath =
   | "/dashboard"
   | "/financeiro"
+  | "/recorrencias"
   | "/consultor"
   | "/clientes"
   | "/itens"
@@ -29,6 +31,7 @@ export type SidebarRouteItem = {
 export const SIDEBAR_ITEMS: SidebarRouteItem[] = [
   { id: "inicio", label: "Início", path: "/dashboard", icon: LayoutDashboard },
   { id: "financeiro", label: "Fluxo de Caixa", path: "/financeiro", icon: WalletCards },
+  { id: "recorrencias", label: "Recorrencias", path: "/recorrencias", icon: CalendarClock },
   { id: "consultor", label: "Consultor", path: "/consultor", icon: Lightbulb },
   { id: "clientes", label: "Clientes", path: "/clientes", icon: Users },
   { id: "itens", label: "Itens / Custos", path: "/itens", icon: Boxes },

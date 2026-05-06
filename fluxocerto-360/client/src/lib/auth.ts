@@ -52,7 +52,11 @@ type CreateAccountInput = {
 
 export type OnboardingData = {
   step?: 1 | 2 | 3 | 4;
+  onboardingVersion?: "v1" | "v2";
   usageMode?: OnboardingUsageMode;
+  receivingMethods?: string[];
+  fixedExpenseSuggestions?: Array<{ name: string; amount: number; dueDate: string; category?: string }>;
+  priority?: "organize" | "tight" | "reserve" | "grow";
   monthlyIncome?: number;
   financialMode?: OnboardingFinancialMode;
   financialPain?: "mix_money" | "money_disappears" | "no_profit" | "no_reserve";

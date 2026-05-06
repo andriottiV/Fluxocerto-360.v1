@@ -6,8 +6,16 @@ import {
   PotDistribution,
   Transaction,
   TransactionType,
+  PotType,
 } from "@/lib/types";
-import { getTransactionFeeAmount, getTransactionGrossAmount } from "@/lib/finance";
+import {
+  calculateRealAvailableByPot,
+  getTransactionFeeAmount,
+  getTransactionGrossAmount,
+  getUpcomingCommitments,
+  type UpcomingCommitment,
+} from "@/lib/finance";
+import type { Recurrence } from "@/lib/recurrences";
 
 export type FluxFinancialState =
   | "SEM_DADOS"
@@ -28,6 +36,7 @@ export type FluxAdvisorContext = {
   monthlyGoal?: number | null;
   reserveRequired?: number | null;
   protectedCommitments?: number | null;
+  recurrences?: Recurrence[] | null;
 };
 
 export type FluxPromptContext = {
@@ -55,6 +64,13 @@ export type FluxQuestionIntent =
   | "COMPROMISSO_FUTURO"
   | "PRECIFICACAO"
   | "PLANEJAMENTO"
+  | "APP_USAGE"
+  | "ACTION_BLOCKED"
+  | "APP_POTES"
+  | "APP_TAXAS"
+  | "APP_RECORRENCIAS"
+  | "APP_COMPROMISSOS"
+  | "APP_DISPONIVEL_REAL"
   | "FINANCAS_GERAIS";
 
 export type FluxQuestionAnswer = {
@@ -93,6 +109,109 @@ function normalizeQuestion(value: string) {
     .toLocaleLowerCase("pt-BR")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export type FluxQuestionClass =
+  | "pergunta_sobre_app"
+  | "pergunta_financeira"
+  | "pergunta_sobre_potes"
+  | "pergunta_sobre_taxas"
+  | "pergunta_sobre_recorrencias"
+  | "pergunta_sobre_compromissos"
+  | "pedido_de_acao"
+  | "pergunta_generica";
+
+export type FluxIntent =
+  | "retirar_dinheiro"
+  | "retirar_dinheiro_por_pote"
+  | "investir_dinheiro"
+  | "consulta_reserva"
+  | "consulta_compromissos"
+  | "pergunta_sobre_app"
+  | "fallback";
+
+export type DetectedPot = "PF" | "PJ" | "Reserva" | null;
+
+function potTypeFromDetectedPot(pot: DetectedPot) {
+  if (pot === "PJ") return PotType.BUSINESS;
+  if (pot === "Reserva") return PotType.RESERVE;
+  return PotType.PERSONAL;
+}
+
+export function detectPot(question: string): DetectedPot {
+  const text = normalizeQuestion(question);
+  if (/\b(pj|negocio|negocio|empresa|business|profissional)\b/.test(text)) return "PJ";
+  if (/\b(pf|pessoal|uso pessoal|dinheiro pessoal)\b/.test(text)) return "PF";
+  if (/\b(reserva|emergencia|emergencia)\b/.test(text)) return "Reserva";
+  return null;
+}
+
+export function classifyIntent(question: string): FluxIntent {
+  const text = normalizeQuestion(question);
+  const pot = detectPot(question);
+
+  if (/(compromisso|compromissos|vence|vencem|proximos 10|proximos dez|semana)/.test(text)) {
+    return "consulta_compromissos";
+  }
+  if (/(reserva)/.test(text) && /(como esta|saldo|tenho|consulta|quanto|guardar)/.test(text)) {
+    return "consulta_reserva";
+  }
+  if (/(investir|aplicar|guardar|render|investimento)/.test(text) && /(dinheiro|pote|pf|pj|reserva|negocio|pessoal)/.test(text)) {
+    return "investir_dinheiro";
+  }
+  if (/(retirar|sacar|tirar|usar|gastar)/.test(text) && /(dinheiro|pote|pf|pj|reserva|negocio|pessoal|hoje)/.test(text)) {
+    return pot ? "retirar_dinheiro_por_pote" : "retirar_dinheiro";
+  }
+  if (classifyFluxQuestion(question).startsWith("pergunta_sobre")) return "pergunta_sobre_app";
+  return "fallback";
+}
+
+export function buildContext(context: FluxAdvisorContext, now = new Date()) {
+  const pots = Array.isArray(context.pots) ? context.pots : [];
+  const availability = getRealAvailabilityForAdvisor(context, now);
+  const byType = (type: PotType) => availability.find((item) => item.potType === type);
+
+  return {
+    saldoPF: roundMoney(pots.find((pot) => pot.type === PotType.PERSONAL)?.balance ?? 0),
+    saldoPJ: roundMoney(pots.find((pot) => pot.type === PotType.BUSINESS)?.balance ?? 0),
+    saldoReserva: roundMoney(pots.find((pot) => pot.type === PotType.RESERVE)?.balance ?? 0),
+    compromissosProximos: getUpcomingForAdvisor(context, now),
+    disponivelRealPorPote: {
+      PF: byType(PotType.PERSONAL),
+      PJ: byType(PotType.BUSINESS),
+      Reserva: byType(PotType.RESERVE),
+    },
+  };
+}
+
+export function classifyFluxQuestion(question: string): FluxQuestionClass {
+  const text = normalizeQuestion(question);
+  const isHowToQuestion = /(como|onde|o que|por que|porque|explica|funciona)/.test(text);
+
+  if (!isHowToQuestion && /(registra|registre|registrar|lanca|lança|lancar|lançar|cria|criar|apaga|apagar|muda|mudar|altera|alterar|confirma|confirmar|move|mover)\b/.test(text)) {
+    if (/(entrada|saida|saída|taxa|recorrencia|recorrência|pote|dinheiro|compromisso|categoria)/.test(text)) {
+      return "pedido_de_acao";
+    }
+  }
+  if (/(taxa|taxas|credito|debito|pix|voucher)/.test(text) && /(como|onde|mudar|alterar|funciona)/.test(text)) {
+    return "pergunta_sobre_taxas";
+  }
+  if (/(recorrencia|recorrencias|recorrência|recorrências|aluguel todo mes|todo mes|todo mês)/.test(text)) {
+    return "pergunta_sobre_recorrencias";
+  }
+  if (/(compromisso|compromissos|vence|vencem|proximos 10|proximos dez|contas proximas|contas próximas)/.test(text)) {
+    return "pergunta_sobre_compromissos";
+  }
+  if (/(pote|potes|pf|pj|reserva|disponivel real|disponível real)/.test(text)) {
+    return "pergunta_sobre_potes";
+  }
+  if (/(onde|como|o que e|o que é|funciona|usar|entrada|saida|saída|categoria|contas)/.test(text)) {
+    return "pergunta_sobre_app";
+  }
+  if (/(posso|devo|quanto|lucro|reserva|retirar|sacar|gastar|faturei|caixa)/.test(text)) {
+    return "pergunta_financeira";
+  }
+  return "pergunta_generica";
 }
 
 export function extractCurrencyValue(text: string) {
@@ -338,6 +457,208 @@ function calculateReserveValue(context: FluxAdvisorContext) {
   );
 }
 
+function getUpcomingForAdvisor(context: FluxAdvisorContext, now = new Date()) {
+  return getUpcomingCommitments({
+    accounts: Array.isArray(context.adjustmentAccounts) ? context.adjustmentAccounts : [],
+    recurrences: Array.isArray(context.recurrences) ? context.recurrences : [],
+    today: now,
+    daysWindow: 10,
+  });
+}
+
+function getRealAvailabilityForAdvisor(context: FluxAdvisorContext, now = new Date()) {
+  const pots = Array.isArray(context.pots) ? context.pots : [];
+  return calculateRealAvailableByPot(pots, getUpcomingForAdvisor(context, now));
+}
+
+function getPotAvailability(context: FluxAdvisorContext, type: PotType, now = new Date()) {
+  return getRealAvailabilityForAdvisor(context, now).find((item) => item.potType === type);
+}
+
+function formatPotLabel(type: PotType) {
+  if (type === PotType.BUSINESS) return "PJ";
+  if (type === PotType.RESERVE) return "Reserva";
+  return "PF";
+}
+
+function formatCommitmentLine(commitment: UpcomingCommitment) {
+  const due = parseDateSafe(commitment.dueDate);
+  const day = due ? String(due.getDate()).padStart(2, "0") : "--";
+  return `${commitment.name}: ${formatCurrencyBR(commitment.amount)} no dia ${day}, pote ${formatPotLabel(commitment.potType)}.`;
+}
+
+function answerAppUsageQuestion(question: string): FluxQuestionAnswer | null {
+  const text = normalizeQuestion(question);
+
+  if (/(entrada|receita|faturamento|venda)/.test(text) && /(onde|como|registrar|faco|faço|lançar|lancar)/.test(text)) {
+    return {
+      intent: "APP_USAGE",
+      answer: "Para registrar uma entrada, vá em Fluxo de Caixa e use Nova entrada.",
+      severity: "safe",
+      suggestedAction: "Informe valor bruto, forma de pagamento e categoria. As taxas entram pela regra atual.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(saida|saída|gasto|despesa)/.test(text) && /(onde|como|registrar|faco|faço|lançar|lancar)/.test(text)) {
+    return {
+      intent: "APP_USAGE",
+      answer: "Para registrar uma saída, vá em Fluxo de Caixa e escolha Nova saída.",
+      severity: "safe",
+      suggestedAction: "Escolha o pote certo. PF, PJ e Reserva não se misturam automaticamente.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(taxa|taxas|credito|debito|pix)/.test(text)) {
+    return {
+      intent: "APP_TAXAS",
+      answer: "Você muda suas taxas em Ajustes, na aba Taxas.",
+      severity: "safe",
+      suggestedAction: "Taxas reduzem o líquido da entrada. Saídas não entram nesse cálculo.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(pote|potes|pf|pj|reserva)/.test(text) && !/(disponivel real|disponível real)/.test(text)) {
+    return {
+      intent: "APP_POTES",
+      answer: "PF é seu dinheiro pessoal. PJ é o dinheiro do negócio. Reserva é proteção.",
+      severity: "safe",
+      suggestedAction: "Quando registrar uma saída, escolha o pote que realmente paga aquela conta.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(disponivel real|disponível real)/.test(text)) {
+    return {
+      intent: "APP_DISPONIVEL_REAL",
+      answer: "Disponível real é saldo do pote menos compromissos próximos daquele mesmo pote.",
+      severity: "safe",
+      suggestedAction: "Se ficar negativo, eu mostro como falta. O saldo real não muda até você confirmar.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(recorrencia|recorrências|recorrencias|todo mes|todo mês)/.test(text)) {
+    return {
+      intent: "APP_RECORRENCIAS",
+      answer: "Recorrências ficam na tela Recorrências. Cadastre nome, valor, dia, categoria e pote.",
+      severity: "safe",
+      suggestedAction: "Ela não lança sozinha. No vencimento, você confirma, edita ou ignora.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(compromisso|vence|vencem|proximos 10|contas proximas|contas próximas)/.test(text)) {
+    return {
+      intent: "APP_COMPROMISSOS",
+      answer: "No Dashboard, o card Vence nos próximos 10 dias mostra contas e recorrências próximas.",
+      severity: "safe",
+      suggestedAction: "Clique em um compromisso para ver saldo do pote, falta e sugestões.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(categoria|categorias|contas|tipos)/.test(text)) {
+    return {
+      intent: "APP_USAGE",
+      answer: "Categorias ficam em Ajustes, na aba Contas / Tipos.",
+      severity: "safe",
+      suggestedAction: "Elas organizam a base. Recorrências usam essas categorias para sugerir pote e tipo.",
+      requiresSpecificNumbers: false,
+    };
+  }
+  if (/(lucro liquido|lucro líquido)/.test(text)) {
+    return {
+      intent: "APP_USAGE",
+      answer: "Lucro líquido é entrada bruta menos taxas e insumos/custos.",
+      severity: "safe",
+      suggestedAction: "Saídas por pote não reduzem lucro líquido. Elas reduzem saldo do pote escolhido.",
+      requiresSpecificNumbers: false,
+    };
+  }
+
+  return null;
+}
+
+function answerBlockedAction(question: string): FluxQuestionAnswer | null {
+  if (classifyFluxQuestion(question) !== "pedido_de_acao") return null;
+  return {
+    intent: "ACTION_BLOCKED",
+    answer: "Eu ainda não executo isso sozinho.",
+    severity: "attention",
+    suggestedAction: "Posso te mostrar onde fazer com segurança, sem lançar ou alterar nada automaticamente.",
+    requiresSpecificNumbers: false,
+  };
+}
+
+function answerPotWithdrawal(question: string, context: FluxAdvisorContext, now = new Date()): FluxQuestionAnswer {
+  const detectedPot = detectPot(question) ?? "PF";
+  const potType = potTypeFromDetectedPot(detectedPot);
+  const availability = getPotAvailability(context, potType, now);
+  const label = detectedPot;
+
+  if (!availability) {
+    return {
+      intent: "POSSO_GASTAR",
+      answer: `Ainda não tenho dados suficientes do pote ${label} para responder com segurança.`,
+      severity: "attention",
+      suggestedAction: "Posso te ajudar melhor se você me disser qual pote quer analisar (PF, PJ ou Reserva).",
+      requiresSpecificNumbers: true,
+    };
+  }
+
+  if (availability.availableReal <= 0) {
+    return {
+      intent: "POSSO_GASTAR",
+      answer: `Agora não é ideal retirar do ${label}. Hoje o ${label} tem ${formatCurrencyBR(availability.balance)}, e seus compromissos nos próximos 10 dias somam ${formatCurrencyBR(availability.committed)}.`,
+      severity: "risk",
+      suggestedAction:
+        availability.deficit > 0
+          ? `Faltam ${formatCurrencyBR(availability.deficit)} para cobrir esse pote.`
+          : "Espere sobrar disponível real antes de retirar.",
+      requiresSpecificNumbers: true,
+    };
+  }
+
+  return {
+    intent: "POSSO_GASTAR",
+    answer: `Hoje o seu ${label} tem ${formatCurrencyBR(availability.balance)}.\nSeus compromissos nos próximos 10 dias somam ${formatCurrencyBR(availability.committed)}.\nVocê pode retirar até ${formatCurrencyBR(availability.availableReal)} sem comprometer ${label === "PJ" ? "o negócio" : "esse pote"}.`,
+    severity: "safe",
+    suggestedAction: "Não retire acima do disponível real. Seu saldo não muda até você registrar uma saída.",
+    requiresSpecificNumbers: true,
+  };
+}
+
+function answerPotInvestment(question: string, context: FluxAdvisorContext, now = new Date()): FluxQuestionAnswer {
+  const detectedPot = detectPot(question);
+  if (!detectedPot) {
+    return {
+      intent: "PLANEJAMENTO",
+      answer: "Posso te ajudar melhor se você me disser qual pote quer analisar (PF, PJ ou Reserva).",
+      severity: "attention",
+      suggestedAction: "Exemplo: posso investir meu dinheiro PJ?",
+      requiresSpecificNumbers: false,
+    };
+  }
+
+  const availability = getPotAvailability(context, potTypeFromDetectedPot(detectedPot), now);
+  if (!availability) {
+    return {
+      intent: "PLANEJAMENTO",
+      answer: `Ainda não tenho dados suficientes do ${detectedPot} para avaliar investimento.`,
+      severity: "attention",
+      suggestedAction: "Registre saldo e compromissos para eu calcular o disponível real.",
+      requiresSpecificNumbers: true,
+    };
+  }
+
+  return {
+    intent: "PLANEJAMENTO",
+    answer: `Antes de investir, veja se o seu ${detectedPot} cobre os próximos compromissos.\nSaldo ${detectedPot}: ${formatCurrencyBR(availability.balance)}\nCompromissos: ${formatCurrencyBR(availability.committed)}\nDisponível real: ${formatCurrencyBR(availability.availableReal)}.`,
+    severity: availability.availableReal > 0 ? "safe" : "risk",
+    suggestedAction:
+      availability.availableReal > 0
+        ? "Se sobrar depois disso, você pode investir com mais segurança."
+        : "Como os compromissos superam o disponível, priorize manter o caixa.",
+    requiresSpecificNumbers: true,
+  };
+}
+
 function calculateCurrentRealCash(context: FluxAdvisorContext) {
   const pots = Array.isArray(context.pots) ? context.pots : [];
   const potBalance = roundMoney(pots.reduce((sum, pot) => sum + safeNumber(pot.balance), 0));
@@ -509,8 +830,100 @@ function detectFluxQuestionIntent(question: string): FluxQuestionIntent {
 }
 
 export function answerFluxQuestion(question: string, context: FluxAdvisorContext, now = new Date()): FluxQuestionAnswer {
+  const blockedAction = answerBlockedAction(question);
+  if (blockedAction) return blockedAction;
+
+  const specificIntent = classifyIntent(question);
+  if (specificIntent === "retirar_dinheiro" || specificIntent === "retirar_dinheiro_por_pote") {
+    return answerPotWithdrawal(question, context, now);
+  }
+  if (specificIntent === "investir_dinheiro") {
+    return answerPotInvestment(question, context, now);
+  }
+
+  const appAnswer = answerAppUsageQuestion(question);
+  const questionClass = classifyFluxQuestion(question);
+  const asksForCommitmentList = /(o que vence|o que vencem|quais.*venc|lista.*compromisso)/.test(normalizeQuestion(question));
+  if (appAnswer && questionClass !== "pergunta_financeira" && !asksForCommitmentList) return appAnswer;
+
   const intent = detectFluxQuestionIntent(question);
   const promptContext = buildFluxPromptContext(context);
+
+  if (questionClass === "pergunta_sobre_compromissos") {
+    const upcoming = getUpcomingForAdvisor(context, now);
+    if (upcoming.length === 0) {
+      return {
+        intent: "APP_COMPROMISSOS",
+        answer: "Não encontrei compromissos vencendo nos próximos 10 dias.",
+        severity: "safe",
+        suggestedAction: "Cadastre contas ou recorrências para eu acompanhar melhor.",
+        requiresSpecificNumbers: true,
+      };
+    }
+    return {
+      intent: "APP_COMPROMISSOS",
+      answer: upcoming.slice(0, 3).map(formatCommitmentLine).join("\n"),
+      severity: upcoming.some((item) => {
+        const availability = getPotAvailability(context, item.potType, now);
+        return availability ? availability.deficit > 0 : false;
+      }) ? "attention" : "safe",
+      suggestedAction: upcoming.length > 3 ? `Ainda tem mais ${upcoming.length - 3} compromisso(s) no radar.` : "Clique no card do Dashboard para ver detalhes.",
+      requiresSpecificNumbers: true,
+    };
+  }
+
+  if (/retirar|sacar|tirar.*pessoal|uso pessoal/.test(normalizeQuestion(question))) {
+    const pf = getPotAvailability(context, PotType.PERSONAL, now);
+    if (!pf || pf.balance <= 0) {
+      return {
+        intent: "POSSO_GASTAR",
+        answer: "Ainda não vejo saldo PF suficiente para recomendar retirada.",
+        severity: "attention",
+        suggestedAction: "Registre entradas e compromissos para eu calcular o disponível real.",
+        requiresSpecificNumbers: true,
+      };
+    }
+    if (pf.availableReal <= 0) {
+      return {
+        intent: "POSSO_GASTAR",
+        answer: `Agora eu não retiraria do PF. Seu saldo PF é ${formatCurrencyBR(pf.balance)}, mas os próximos compromissos consomem ${formatCurrencyBR(pf.committed)}.`,
+        severity: "risk",
+        suggestedAction: pf.deficit > 0 ? `Faltam ${formatCurrencyBR(pf.deficit)} para cobrir os próximos 10 dias.` : "Espere sobrar disponível real antes de retirar.",
+        requiresSpecificNumbers: true,
+      };
+    }
+    return {
+      intent: "POSSO_GASTAR",
+      answer: `Você pode retirar até ${formatCurrencyBR(pf.availableReal)} do PF sem comprometer os próximos 10 dias.`,
+      severity: "safe",
+      suggestedAction: `Saldo PF: ${formatCurrencyBR(pf.balance)}. Compromissos PF próximos: ${formatCurrencyBR(pf.committed)}.`,
+      requiresSpecificNumbers: true,
+    };
+  }
+
+  if (questionClass === "pergunta_sobre_potes" && /(disponivel real|disponível real|pf|pj|reserva)/.test(normalizeQuestion(question))) {
+    const availability = getRealAvailabilityForAdvisor(context, now);
+    if (availability.length === 0) {
+      return {
+        intent: "APP_POTES",
+        answer: "Ainda não tenho potes suficientes para calcular o disponível real.",
+        severity: "attention",
+        suggestedAction: "Configure seus potes e registre movimentações para eu analisar.",
+        requiresSpecificNumbers: true,
+      };
+    }
+    return {
+      intent: "APP_POTES",
+      answer: availability
+        .map((pot) =>
+          `${formatPotLabel(pot.potType)}: saldo ${formatCurrencyBR(pot.balance)}, comprometido ${formatCurrencyBR(pot.committed)}, disponível real ${formatCurrencyBR(pot.availableReal)}.`
+        )
+        .join("\n"),
+      severity: availability.some((pot) => pot.deficit > 0) ? "attention" : "safe",
+      suggestedAction: "Compromissos futuros não mexem no saldo. Eles só ajudam você a se preparar.",
+      requiresSpecificNumbers: true,
+    };
+  }
 
   if (intent === "COMPROMISSO_FUTURO") {
     const valorCompromisso = extractCurrencyValue(question);
@@ -706,6 +1119,19 @@ export function answerFluxQuestion(question: string, context: FluxAdvisorContext
   }
 
   if (intent === "RESERVA") {
+    const reserve = getPotAvailability(context, PotType.RESERVE, now);
+    if (reserve && reserve.balance > 0) {
+      const canSaveSmallAmount = (getPotAvailability(context, PotType.PERSONAL, now)?.availableReal ?? 0) >= 50;
+      return {
+        intent,
+        answer: `Sua reserva atual é ${formatCurrencyBR(reserve.balance)}.`,
+        severity: reserve.balance > 0 ? "safe" : "attention",
+        suggestedAction: canSaveSmallAmount
+          ? "Se guardar R$ 50 hoje, você reforça proteção sem apertar o PF."
+          : "Reforce a reserva quando o PF tiver disponível real depois dos compromissos.",
+        requiresSpecificNumbers: true,
+      };
+    }
     if (promptContext.reserva <= 0) {
       return {
         intent,

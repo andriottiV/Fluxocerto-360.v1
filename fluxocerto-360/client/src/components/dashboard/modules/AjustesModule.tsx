@@ -1,9 +1,10 @@
 ﻿import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { CreditCard, FolderKanban, Plus, Settings2, ShieldCheck, SlidersHorizontal, Trash2, User, Wrench } from "lucide-react";
+import { BookOpenCheck, CreditCard, FolderKanban, Plus, Settings2, ShieldCheck, SlidersHorizontal, Trash2, User, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 
 import { useApp } from "@/contexts/AppContext";
+import MoneyValue from "@/components/ui/MoneyValue";
 import {
   Dialog,
   DialogContent,
@@ -12,14 +13,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type {
-  AdjustmentAccount,
-  AdjustmentAccountCategory,
-  AdjustmentAccountPot,
-  AdjustmentAccountType,
+import {
+  PotType,
+  TransactionType,
   PaymentFeeSetting,
   PotDistribution,
 } from "@/lib/types";
+import {
+  addAccountCategory,
+  deleteAccountCategory,
+  findCategoryByNormalizedName,
+  getVisibleAccountCategories,
+  subscribeAccountCategories,
+  type AccountCategory,
+  type AccountCategoryKind,
+} from "@/lib/accountCategories";
 import { formatCurrency } from "@/lib/utils";
 
 type SettingsTab = "perfil" | "potes" | "taxas" | "servicos" | "contas" | "preferencias";
@@ -38,21 +46,6 @@ const TABS: Array<{ id: SettingsTab; label: string; icon: ReactNode }> = [
   { id: "servicos", label: "Serviços", icon: <Wrench className="h-4 w-4" /> },
   { id: "contas", label: "Contas / Tipos", icon: <Settings2 className="h-4 w-4" /> },
   { id: "preferencias", label: "Preferências", icon: <SlidersHorizontal className="h-4 w-4" /> },
-];
-
-const ACCOUNT_CATEGORIES: AdjustmentAccountCategory[] = [
-  "moradia",
-  "internet",
-  "transporte",
-  "alimentacao",
-  "saude",
-  "lazer",
-  "impostos",
-  "ferramentas",
-  "assinatura/app",
-  "fornecedores",
-  "cartao",
-  "outros",
 ];
 
 const POT_DISTRIBUTION_DEFAULT: PotDistribution = {
@@ -78,21 +71,50 @@ const DEFAULT_SUBPOTS: Subpot[] = [
   { id: "reserve-planos", pot: "reserve", name: "Grandes planos", goal: 0 },
 ];
 
-function dayDiffFromToday(iso: string) {
-  const target = new Date(iso);
-  if (Number.isNaN(target.getTime())) return 999;
-  const now = new Date();
-  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const b = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
-  return Math.ceil((b - a) / (1000 * 60 * 60 * 24));
-}
-
-function mapPotLabel(pot: AdjustmentAccountPot) {
-  return pot === "pf" ? "Dinheiro pessoal (PF)" : "Dinheiro do negocio (PJ)";
-}
-
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function potLabel(type: PotType) {
+  if (type === PotType.BUSINESS) return "PJ";
+  if (type === PotType.RESERVE) return "Reserva";
+  return "PF";
+}
+
+function kindLabel(kind: AccountCategoryKind) {
+  if (kind === "recorrente") return "Recorrente";
+  if (kind === "variavel") return "Variavel";
+  return "Fixa";
+}
+
+function CategoryRow({ category, userId }: { category: AccountCategory; userId?: string }) {
+  const canDelete = category.source !== "legacy" && !category.id.startsWith("default-");
+
+  return (
+    <div className="fd-settings-bill-item fd-settings-category-item">
+      <div className="fd-settings-bill-head">
+        <p>{category.name}</p>
+        <span className={`fd-settings-badge ${category.nature === TransactionType.INCOME ? "pago" : "pendente"}`}>
+          {category.nature === TransactionType.INCOME ? "entrada" : "saida"}
+        </span>
+      </div>
+      <small>
+        {kindLabel(category.kind)} - Pote padrao {potLabel(category.potType)}
+      </small>
+      <div className="fd-settings-bill-meta">
+        <span className={`fd-settings-badge ${category.kind}`}>{kindLabel(category.kind)}</span>
+        <span className="fd-settings-badge parcela">{potLabel(category.potType)}</span>
+        {category.source === "legacy" ? <span className="fd-settings-badge aviso">compatibilidade</span> : null}
+      </div>
+      {canDelete ? (
+        <div className="fd-inline-end">
+          <button className="fd-mini-btn" type="button" onClick={() => deleteAccountCategory(userId, category.id)}>
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function readSubpots(userId?: string): Subpot[] {
@@ -149,10 +171,6 @@ export default function AjustesModule() {
     potDistribution,
     setPotDistribution,
     adjustmentAccounts,
-    addAdjustmentAccount,
-    deleteAdjustmentAccount,
-    payAdjustmentAccount,
-    syncAdjustmentAccountsCycle,
     resetUserFinancialData,
   } = useApp();
   const [, setLocation] = useLocation();
@@ -172,17 +190,17 @@ export default function AjustesModule() {
     business: `${potDistribution.business}`,
     reserve: `${potDistribution.reserve}`,
   });
+  const [accountCategories, setAccountCategories] = useState<AccountCategory[]>(() =>
+    getVisibleAccountCategories(user?.id, adjustmentAccounts)
+  );
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState("");
 
   const [accountDraft, setAccountDraft] = useState({
     name: "",
-    amount: "",
-    category: "moradia" as AdjustmentAccountCategory,
-    type: "fixa" as AdjustmentAccountType,
-    dueDate: new Date().toISOString().slice(0, 10),
-    pot: "pf" as AdjustmentAccountPot,
-    installments: "2",
+    kind: "fixa" as AccountCategoryKind,
+    nature: TransactionType.EXPENSE as TransactionType.INCOME | TransactionType.EXPENSE,
+    potType: PotType.PERSONAL,
   });
 
   useEffect(() => {
@@ -207,25 +225,17 @@ export default function AjustesModule() {
   }, [potDistribution.business, potDistribution.personal, potDistribution.reserve]);
 
   useEffect(() => {
-    syncAdjustmentAccountsCycle();
-  }, [syncAdjustmentAccountsCycle]);
+    const refresh = () => setAccountCategories(getVisibleAccountCategories(user?.id, adjustmentAccounts));
+    refresh();
+    return subscribeAccountCategories(refresh);
+  }, [adjustmentAccounts, user?.id]);
 
-  const groupedAccounts = useMemo(() => {
-    const pf = adjustmentAccounts.filter((account) => account.pot === "pf");
-    const pj = adjustmentAccounts.filter((account) => account.pot === "pj");
-    return { pf, pj };
-  }, [adjustmentAccounts]);
-
-  const accountSummary = useMemo(() => {
-    const pending = adjustmentAccounts.filter((item) => item.status !== "pago");
-    const totalDebt = pending.reduce((sum, item) => sum + (item.totalDebt ?? item.amount), 0);
-    const overdue = pending.filter((item) => dayDiffFromToday(item.dueDate) < 0).length;
-    const dueSoon = pending.filter((item) => {
-      const diff = dayDiffFromToday(item.dueDate);
-      return diff >= 0 && diff <= 5;
-    }).length;
-    return { totalDebt, overdue, dueSoon };
-  }, [adjustmentAccounts]);
+  const groupedCategories = useMemo(() => {
+    const pf = accountCategories.filter((category) => category.potType === PotType.PERSONAL);
+    const pj = accountCategories.filter((category) => category.potType === PotType.BUSINESS);
+    const reserve = accountCategories.filter((category) => category.potType === PotType.RESERVE);
+    return { pf, pj, reserve };
+  }, [accountCategories]);
 
  const potCards = useMemo(
   () =>
@@ -408,66 +418,46 @@ export default function AjustesModule() {
   };
 
   const handleAddAccount = () => {
-    const amount = Number(accountDraft.amount);
-    if (!accountDraft.name.trim()) {
-      toast.error("Nome da conta e obrigatório");
-      return;
-    }
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Valor inválido");
-      return;
-    }
-    if (!accountDraft.dueDate) {
-      toast.error("Data de vencimento obrigatoria");
+    const name = accountDraft.name.trim();
+    if (!name) {
+      toast.error("Nome da categoria e obrigatorio");
       return;
     }
 
-    const installments =
-      accountDraft.type === "variavel"
-        ? Math.max(1, Number(accountDraft.installments) || 1)
-        : undefined;
+    const duplicate = findCategoryByNormalizedName(accountCategories, name);
+    if (duplicate) {
+      toast.warning("Parece que isso ja existe. Categoria existente reutilizada.");
+      setAccountDraft((prev) => ({
+        ...prev,
+        name: "",
+        kind: duplicate.kind,
+        nature: duplicate.nature,
+        potType: duplicate.potType,
+      }));
+      return;
+    }
 
-    const result = addAdjustmentAccount({
-      name: accountDraft.name.trim(),
-      amount,
-      category: accountDraft.category,
-      type: accountDraft.type,
-      dueDate: accountDraft.dueDate,
-      pot: accountDraft.pot,
-      installmentsTotal: installments,
-      installmentsRemaining: installments,
-      totalDebt: installments ? amount * installments : undefined,
+    const result = addAccountCategory(user?.id, {
+      ownerId: user?.id,
+      name,
+      kind: accountDraft.kind,
+      nature: accountDraft.nature,
+      potType: accountDraft.potType,
+      source: "settings",
     });
 
     if (!result.ok) {
-      toast.error(result.error ?? "Erro ao criar conta");
+      toast.error("Erro ao criar categoria");
       return;
     }
 
     setAccountDraft({
       name: "",
-      amount: "",
-      category: "moradia",
-      type: "fixa",
-      dueDate: new Date().toISOString().slice(0, 10),
-      pot: "pf",
-      installments: "2",
+      kind: "fixa",
+      nature: TransactionType.EXPENSE,
+      potType: PotType.PERSONAL,
     });
-    toast.success("Conta adicionada");
-  };
-
-  const handlePayAccount = (account: AdjustmentAccount) => {
-    const result = payAdjustmentAccount(account.id);
-    if (!result.ok) {
-      toast.error(result.error ?? "Não foi possível pagar");
-      return;
-    }
-
-    if (result.borrowedFromOtherPot) {
-      toast.warning("Atencao: saldo insuficiente no pote principal. Pagamento usando emprestimo do outro pote.");
-    } else {
-      toast.success("Conta paga com sucesso");
-    }
+    toast.success(result.reused ? "Categoria existente reutilizada" : "Categoria salva");
   };
 
   return (
@@ -633,7 +623,7 @@ export default function AjustesModule() {
 
                   <div className="fd-settings-pot-balance">
                     <span>Valor atual real</span>
-                    <strong>{formatCurrency(card.balance)}</strong>
+                    <MoneyValue value={formatCurrency(card.balance)} size="md" />
                   </div>
 
                   <div className="fd-settings-subpot-list">
@@ -665,8 +655,8 @@ export default function AjustesModule() {
                             </button>
                           </div>
                           <div className="fd-settings-subpot-meta">
-                            <span>Atual: {formatCurrency(0)}</span>
-                            <span>Objetivo: {subpot.goal > 0 ? formatCurrency(subpot.goal) : "opcional"}</span>
+                            <span>Atual: <MoneyValue value={formatCurrency(0)} size="sm" /></span>
+                            <span>Objetivo: {subpot.goal > 0 ? <MoneyValue value={formatCurrency(subpot.goal)} size="sm" /> : "opcional"}</span>
                           </div>
                           <div className="fd-settings-subpot-progress">
                             <div style={{ width: `${progress}%` }} />
@@ -823,193 +813,99 @@ export default function AjustesModule() {
         <article className="fd-panel fd-glass fd-settings-v2-card">
           <div className="fd-panel-head">
             <h2>Contas e categorias</h2>
-            <p>Organize seus gastos sem criar bagunça.</p>
+            <p>Organize a base do seu dinheiro. Depois use nas recorrências.</p>
           </div>
 
           <p className="fd-settings-type-note">
-            Use tipos simples para não criar bagunça: pessoal, negócio, custos e investimentos.
+            <BookOpenCheck className="h-4 w-4" />
+            Contas estruturam. Recorrências lembram. Lançamentos registram.
           </p>
 
-          <div className="fd-settings-bills-summary">
-            <div>
-              <span>Divida total pendente</span>
-              <strong>{formatCurrency(accountSummary.totalDebt)}</strong>
-            </div>
-            <div>
-              <span>Atrasadas</span>
-              <strong>{accountSummary.overdue}</strong>
-            </div>
-            <div>
-              <span>Vencendo em breve</span>
-              <strong>{accountSummary.dueSoon}</strong>
-            </div>
+          <div className="fd-settings-category-lesson">
+            Aqui você organiza as categorias. Nas recorrências, o app te lembra e você confirma antes de lançar.
           </div>
 
           <div className="fd-settings-bills-form">
             <input
               className="fd-pot-input"
-              placeholder="Nome da conta"
+              placeholder="Nome da categoria"
               value={accountDraft.name}
               onChange={(event) => setAccountDraft((prev) => ({ ...prev, name: event.target.value }))}
             />
-            <input
-              className="fd-pot-input"
-              type="number"
-              min={0.01}
-              step={0.01}
-              placeholder="Valor"
-              value={accountDraft.amount}
-              onChange={(event) => setAccountDraft((prev) => ({ ...prev, amount: event.target.value }))}
-            />
             <select
               className="fd-pot-input"
-              value={accountDraft.category}
+              value={accountDraft.kind}
               onChange={(event) =>
-                setAccountDraft((prev) => ({ ...prev, category: event.target.value as AdjustmentAccountCategory }))
-              }
-            >
-              {ACCOUNT_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <select
-              className="fd-pot-input"
-              value={accountDraft.type}
-              onChange={(event) =>
-                setAccountDraft((prev) => ({ ...prev, type: event.target.value as AdjustmentAccountType }))
+                setAccountDraft((prev) => ({ ...prev, kind: event.target.value as AccountCategoryKind }))
               }
             >
               <option value="fixa">Fixa</option>
               <option value="variavel">Variavel</option>
+              <option value="recorrente">Recorrente</option>
             </select>
-            <input
-              className="fd-pot-input"
-              type="date"
-              value={accountDraft.dueDate}
-              onChange={(event) => setAccountDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
-            />
             <select
               className="fd-pot-input"
-              value={accountDraft.pot}
-              onChange={(event) => setAccountDraft((prev) => ({ ...prev, pot: event.target.value as AdjustmentAccountPot }))}
+              value={accountDraft.potType}
+              onChange={(event) =>
+                setAccountDraft((prev) => ({ ...prev, potType: event.target.value as PotType }))
+              }
             >
-              <option value="pf">Dinheiro pessoal (PF)</option>
-              <option value="pj">Dinheiro do negocio (PJ)</option>
+              <option value={PotType.PERSONAL}>Pote padrão: PF</option>
+              <option value={PotType.BUSINESS}>Pote padrão: PJ</option>
+              <option value={PotType.RESERVE}>Pote padrão: Reserva</option>
             </select>
-            {accountDraft.type === "variavel" ? (
-              <input
-                className="fd-pot-input"
-                type="number"
-                min={1}
-                step={1}
-                value={accountDraft.installments}
-                onChange={(event) => setAccountDraft((prev) => ({ ...prev, installments: event.target.value }))}
-                placeholder="Parcelas"
-              />
-            ) : (
-              <div className="fd-settings-form-placeholder">Conta fixa recorrente mensal</div>
-            )}
-            <button className="fd-mini-btn" type="button" onClick={handleAddAccount}>
+            <select
+              className="fd-pot-input"
+              value={accountDraft.nature}
+              onChange={(event) =>
+                setAccountDraft((prev) => ({
+                  ...prev,
+                  nature: event.target.value as TransactionType.INCOME | TransactionType.EXPENSE,
+                }))
+              }
+            >
+              <option value={TransactionType.EXPENSE}>Natureza: Saida</option>
+              <option value={TransactionType.INCOME}>Natureza: Entrada</option>
+            </select>
+            <button className="fd-primary-btn" type="button" onClick={handleAddAccount}>
               <Plus className="h-4 w-4" />
+              Salvar categoria
             </button>
           </div>
 
           <div className="fd-settings-bills-columns">
             <div>
-              <h3>PF</h3>
+              <h3>Categorias PF</h3>
               <div className="fd-list">
-                {groupedAccounts.pf.length === 0 ? (
-                  <p className="fd-empty">Sem contas PF</p>
+                {groupedCategories.pf.length === 0 ? (
+                  <p className="fd-empty">Sem categorias PF</p>
                 ) : (
-                  groupedAccounts.pf.map((account) => {
-                    const diff = dayDiffFromToday(account.dueDate);
-                    const nearDue = diff >= 0 && diff <= 5;
-                    const overdue = diff < 0 && account.status !== "pago";
-                    return (
-                      <div key={account.id} className="fd-settings-bill-item">
-                        <div className="fd-settings-bill-head">
-                          <p>{account.name}</p>
-                          <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
-                        </div>
-                        <small>
-                          {account.category} ? {mapPotLabel(account.pot)} ? vence {account.dueDate}
-                        </small>
-                        <div className="fd-settings-bill-meta">
-                          <span>{formatCurrency(account.amount)}</span>
-                          <span className={`fd-settings-badge ${account.type}`}>{account.type}</span>
-                          {account.type === "variavel" ? (
-                            <span className="fd-settings-badge parcela">
-                              {account.installmentsRemaining}/{account.installmentsTotal}
-                            </span>
-                          ) : (
-                            <span className="fd-settings-badge parcela">recorrente</span>
-                          )}
-                          {nearDue ? <span className="fd-settings-badge aviso">vence em breve</span> : null}
-                          {overdue ? <span className="fd-settings-badge alerta">atrasada</span> : null}
-                        </div>
-                        <div className="fd-inline-end">
-                          <button className="fd-mini-btn" type="button" onClick={() => handlePayAccount(account)}>
-                            Pagar (Saida)
-                          </button>
-                          <button className="fd-mini-btn" type="button" onClick={() => deleteAdjustmentAccount(account.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
+                  groupedCategories.pf.map((category) => <CategoryRow key={category.id} category={category} userId={user?.id} />)
                 )}
               </div>
             </div>
 
             <div>
-              <h3>PJ</h3>
+              <h3>Categorias PJ</h3>
               <div className="fd-list">
-                {groupedAccounts.pj.length === 0 ? (
-                  <p className="fd-empty">Sem contas PJ</p>
+                {groupedCategories.pj.length === 0 ? (
+                  <p className="fd-empty">Sem categorias PJ</p>
                 ) : (
-                  groupedAccounts.pj.map((account) => {
-                    const diff = dayDiffFromToday(account.dueDate);
-                    const nearDue = diff >= 0 && diff <= 5;
-                    const overdue = diff < 0 && account.status !== "pago";
-                    return (
-                      <div key={account.id} className="fd-settings-bill-item">
-                        <div className="fd-settings-bill-head">
-                          <p>{account.name}</p>
-                          <span className={`fd-settings-badge ${account.status}`}>{account.status}</span>
-                        </div>
-                        <small>
-                          {account.category} ? {mapPotLabel(account.pot)} ? vence {account.dueDate}
-                        </small>
-                        <div className="fd-settings-bill-meta">
-                          <span>{formatCurrency(account.amount)}</span>
-                          <span className={`fd-settings-badge ${account.type}`}>{account.type}</span>
-                          {account.type === "variavel" ? (
-                            <span className="fd-settings-badge parcela">
-                              {account.installmentsRemaining}/{account.installmentsTotal}
-                            </span>
-                          ) : (
-                            <span className="fd-settings-badge parcela">recorrente</span>
-                          )}
-                          {nearDue ? <span className="fd-settings-badge aviso">vence em breve</span> : null}
-                          {overdue ? <span className="fd-settings-badge alerta">atrasada</span> : null}
-                        </div>
-                        <div className="fd-inline-end">
-                          <button className="fd-mini-btn" type="button" onClick={() => handlePayAccount(account)}>
-                            Pagar (Saida)
-                          </button>
-                          <button className="fd-mini-btn" type="button" onClick={() => deleteAdjustmentAccount(account.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
+                  groupedCategories.pj.map((category) => <CategoryRow key={category.id} category={category} userId={user?.id} />)
                 )}
               </div>
             </div>
+
+            {groupedCategories.reserve.length > 0 ? (
+              <div>
+                <h3>Categorias Reserva</h3>
+                <div className="fd-list">
+                  {groupedCategories.reserve.map((category) => (
+                    <CategoryRow key={category.id} category={category} userId={user?.id} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </article>
       )}

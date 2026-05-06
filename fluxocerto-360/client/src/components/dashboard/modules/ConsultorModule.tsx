@@ -2,17 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Bot, Eye, Mic, Send, ShieldCheck, Sparkles, Square, WalletCards } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
+import MoneyValue from "@/components/ui/MoneyValue";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { getUserOnboardingData } from "@/lib/auth";
 import {
   answerFluxQuestion,
   buildFluxPromptContext,
   calculateAvailableToday,
+  classifyFluxQuestion,
   generateLocalAction,
   getUserFinancialState,
   type FluxAdvisorContext,
   type FluxFinancialState,
 } from "@/lib/fluxAdvisor";
+import { readRecurrences, subscribeRecurrences, type Recurrence } from "@/lib/recurrences";
 import { formatCurrency } from "@/lib/utils";
 
 type FluxSeverity = "safe" | "attention" | "risk";
@@ -27,12 +30,12 @@ type FluxMessage = {
 };
 
 const QUICK_QUESTIONS = [
-  "Posso gastar hoje?",
-  "Quanto tenho em caixa?",
-  "Quanto faturei hoje?",
-  "Onde estou perdendo dinheiro?",
-  "Como melhorar meu lucro?",
-  "Quanto falta pra minha meta?",
+  "Posso retirar dinheiro hoje?",
+  "Como está minha reserva?",
+  "O que vence essa semana?",
+  "Onde faço uma entrada?",
+  "Como mudar minhas taxas?",
+  "Como funcionam os potes?",
 ];
 
 const STATE_COPY: Record<FluxFinancialState, { status: string; tone: FluxSeverity }> = {
@@ -96,6 +99,19 @@ function isApiAnswerUseful(
   return answer.length > 8;
 }
 
+function shouldKeepLocalAnswer(text: string, localAnswer: ReturnType<typeof answerFluxQuestion>) {
+  const questionClass = classifyFluxQuestion(text);
+  return (
+    questionClass === "pedido_de_acao" ||
+    questionClass === "pergunta_sobre_app" ||
+    questionClass === "pergunta_sobre_taxas" ||
+    questionClass === "pergunta_sobre_recorrencias" ||
+    questionClass === "pergunta_sobre_compromissos" ||
+    localAnswer.intent === "ACTION_BLOCKED" ||
+    localAnswer.intent.startsWith("APP_")
+  );
+}
+
 export default function ConsultorModule() {
   const {
     user,
@@ -109,12 +125,14 @@ export default function ConsultorModule() {
 
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<FluxMessage[]>([]);
+  const [recurrences, setRecurrences] = useState<Recurrence[]>(() => readRecurrences(user?.id));
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
   const lastSubmissionRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
   const activeRequestRef = useRef<string | null>(null);
+  const hasChatInteractionRef = useRef(false);
 
   const {
     supported: voiceSupported,
@@ -127,6 +145,12 @@ export default function ConsultorModule() {
 
   const onboardingData = useMemo(() => (user?.id ? getUserOnboardingData(user.id) : {}), [user?.id]);
 
+  useEffect(() => {
+    const refresh = () => setRecurrences(readRecurrences(user?.id));
+    refresh();
+    return subscribeRecurrences(refresh);
+  }, [user?.id]);
+
   const advisorContext = useMemo<FluxAdvisorContext>(() => {
     return {
       transactions: scopeByUser(transactions, user?.id),
@@ -134,10 +158,11 @@ export default function ConsultorModule() {
       costs: scopeByUser(costs, user?.id),
       paymentAccounts: scopeByUser(paymentAccounts, user?.id),
       adjustmentAccounts: scopeByUser(adjustmentAccounts, user?.id),
+      recurrences: scopeByUser(recurrences, user?.id),
       potDistribution,
       metaMensal: onboardingData.metaMensal ?? 0,
     };
-  }, [adjustmentAccounts, costs, onboardingData.metaMensal, paymentAccounts, potDistribution, pots, transactions, user?.id]);
+  }, [adjustmentAccounts, costs, onboardingData.metaMensal, paymentAccounts, potDistribution, pots, recurrences, transactions, user?.id]);
 
   const promptContext = useMemo(() => buildFluxPromptContext(advisorContext), [advisorContext]);
   const availableToday = useMemo(() => calculateAvailableToday(advisorContext), [advisorContext]);
@@ -175,6 +200,12 @@ export default function ConsultorModule() {
   }, [voiceTranscript]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.querySelector(".fd-main")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
+  useEffect(() => {
+    if (!hasChatInteractionRef.current || (messages.length === 0 && !loading)) return;
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
@@ -186,6 +217,8 @@ export default function ConsultorModule() {
     const isRecentDuplicate = lastSubmission.text === normalizedText && now - lastSubmission.at < 1200;
 
     if (!cleanText || loadingRef.current || isRecentDuplicate) return;
+
+    hasChatInteractionRef.current = true;
 
     const requestId = createId("flux-request");
     loadingRef.current = true;
@@ -203,6 +236,21 @@ export default function ConsultorModule() {
     setLoading(true);
 
     const localAnswer = answerFluxQuestion(cleanText, advisorContext);
+    if (shouldKeepLocalAnswer(cleanText, localAnswer)) {
+      const localMessage: FluxMessage = {
+        id: fluxResponseId,
+        role: "flux",
+        content: localAnswer.answer,
+        severity: localAnswer.severity,
+        suggestedAction: localAnswer.suggestedAction,
+      };
+      setMessages((prev) => (prev.some((message) => message.id === fluxResponseId) ? prev : [...prev, localMessage]));
+      activeRequestRef.current = null;
+      loadingRef.current = false;
+      setLoading(false);
+      window.setTimeout(() => inputRef.current?.focus(), 40);
+      return;
+    }
 
     try {
       const res = await fetch("/api/flux-ai", {
@@ -281,7 +329,7 @@ export default function ConsultorModule() {
         <article className={`fd-flux-main-card ${stateCopy.tone}`}>
           <div>
             <span className="fd-flux-card-kicker">Hoje você pode usar com segurança</span>
-            <strong>{formatCurrency(availableToday)}</strong>
+            <MoneyValue value={formatCurrency(availableToday)} size="lg" />
             <p>{stateCopy.status}</p>
           </div>
           <div className="fd-flux-main-orbit">
@@ -356,7 +404,7 @@ export default function ConsultorModule() {
               <strong>{onboardingInitialMessage.split("\n")[0]}</strong>
               <p>{onboardingInitialMessage.split("\n")[1]}</p>
               <div className="fd-flux-empty-suggestions">
-                {["Posso gastar hoje?", "Quanto tenho em caixa?", "Onde estou perdendo dinheiro?"].map((question) => (
+                {["Posso retirar dinheiro hoje?", "O que vence essa semana?", "Onde faço uma entrada?"].map((question) => (
                   <button
                     key={question}
                     type="button"

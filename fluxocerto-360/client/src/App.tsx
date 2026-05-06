@@ -3,6 +3,8 @@
 // Design: Roteamento principal e layout da aplicação
 // ============================================================================
 
+import { useEffect } from "react";
+
 import { useApp, AppProvider } from "@/contexts/AppContext";
 import { ScreenType } from "@/lib/types";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -20,6 +22,10 @@ import AuthStatusScreen from "@/components/screens/AuthStatusScreen";
 
 function Router() {
   const { state, currentScreen, user, logout } = useApp();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [currentScreen]);
 
   if (state.isLoading) {
     return <div className="min-h-screen bg-[#020b08]" />;

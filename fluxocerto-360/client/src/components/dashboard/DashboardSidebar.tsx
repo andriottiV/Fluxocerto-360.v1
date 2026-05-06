@@ -57,13 +57,13 @@ export default function DashboardSidebar({
       <div className="fd-sidebar-footer">
         <button
           type="button"
-          title="Logout"
-          aria-label="Logout"
+          title="Sair"
+          aria-label="Sair"
           className="fd-nav-item"
           onClick={onLogout}
         >
           <LogOut className="h-4 w-4" />
-          <span>Logout</span>
+          <span>Sair</span>
         </button>
       </div>
     </aside>

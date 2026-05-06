@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Check, SunMoon, Trash2 } from "lucide-react";
+import { Bell, Check, LogOut, SunMoon, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 
 import { useApp } from "@/contexts/AppContext";
@@ -23,6 +23,7 @@ const ClientesModule = lazy(() => import("@/components/dashboard/modules/Cliente
 const ItensModule = lazy(() => import("@/components/dashboard/modules/ItensModule"));
 const AjustesModule = lazy(() => import("@/components/dashboard/modules/AjustesModule"));
 const AdministracaoModule = lazy(() => import("@/components/dashboard/modules/AdministracaoModule"));
+const RecorrenciasModule = lazy(() => import("@/components/dashboard/modules/RecorrenciasModule"));
 
 function normalizeRoute(path: string): DashboardRoutePath {
   const plainPath = path.split("?")[0] as DashboardRoutePath;
@@ -37,6 +38,10 @@ const ROUTE_META: Record<DashboardRoutePath, { title: string; subtitle: string }
   "/financeiro": {
     title: "Fluxo de Caixa",
     subtitle: "Veja o dinheiro real que entrou, saiu e ficou livre.",
+  },
+  "/recorrencias": {
+    title: "Recorrencias",
+    subtitle: "Cadastre entradas e saidas que se repetem para nao esquecer nada.",
   },
   "/consultor": {
     title: "Consultor Flux",
@@ -127,6 +132,11 @@ export default function DashboardScreen() {
   }, [activePath]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    document.querySelector(".fd-main")?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activePath]);
+
+  useEffect(() => {
     setReadNotificationIds(readStoredNotificationIds(user?.id));
   }, [user?.id]);
 
@@ -169,16 +179,18 @@ export default function DashboardScreen() {
     });
   };
 
+  const handleLogout = () => {
+    logout();
+    goScreen(ScreenType.LANDING);
+  };
+
   return (
     <div className="fd-shell" data-theme={mode}>
       <DashboardSidebar
         activePath={activePath}
         isAdmin={isAdmin}
         onNavigate={setLocation as (path: DashboardRoutePath) => void}
-        onLogout={() => {
-          logout();
-          goScreen(ScreenType.LANDING);
-        }}
+        onLogout={handleLogout}
       />
 
       <main className="fd-main">
@@ -208,6 +220,16 @@ export default function DashboardScreen() {
               {unreadNotifications.length > 0 ? (
                 <span className="fd-notif-badge">{unreadNotifications.length}</span>
               ) : null}
+            </button>
+
+            <button
+              type="button"
+              className="fd-logout-top-btn"
+              onClick={handleLogout}
+              aria-label="Sair"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Sair</span>
             </button>
             </>
           }
@@ -266,6 +288,7 @@ export default function DashboardScreen() {
         {activePath === "/financeiro" && <FinanceiroModule />}
         <Suspense fallback={<DashboardModuleLoading />}>
           {activePath === "/consultor" && <ConsultorModule />}
+          {activePath === "/recorrencias" && <RecorrenciasModule />}
           {activePath === "/clientes" && <ClientesModule />}
           {activePath === "/itens" && <ItensModule />}
           {activePath === "/ajustes" && <AjustesModule />}

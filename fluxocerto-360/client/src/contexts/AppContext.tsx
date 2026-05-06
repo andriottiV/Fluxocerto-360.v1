@@ -50,6 +50,7 @@ import {
   persistAuthSession,
   updateAuthUserProfile,
 } from "@/lib/auth";
+import { validatePotExpense } from "@/lib/finance";
 import { hasSupabaseConfig } from "@/lib/supabaseClient";
 import {
   getClients as getSupabaseClients,
@@ -210,25 +211,25 @@ type OnboardingPotBlueprint = {
 function getOnboardingPotBlueprint(mode: OnboardingUsageMode): OnboardingPotBlueprint {
   if (mode === "personal") {
     return {
-      personal: { name: "Liberdade", icon: "Pessoal" },
-      business: { name: "Contas Fixas", icon: "Contas" },
+      personal: { name: "Pessoal", icon: "Pessoal" },
+      business: { name: "Negocio opcional", icon: "Negocio" },
       reserve: { name: "Reserva", icon: "Reserva" },
-      distribution: { personal: 50, business: 40, reserve: 10 },
+      distribution: { personal: 80, business: 0, reserve: 20 },
     };
   }
   if (mode === "business") {
     return {
-      personal: { name: "Negócio", icon: "Negocio" },
-      business: { name: "Impostos/Taxas", icon: "Impostos" },
+      personal: { name: "Pessoal opcional", icon: "Pessoal" },
+      business: { name: "Negocio", icon: "Negocio" },
       reserve: { name: "Reserva", icon: "Reserva" },
-      distribution: { personal: 70, business: 20, reserve: 10 },
+      distribution: { personal: 0, business: 80, reserve: 20 },
     };
   }
   return {
     personal: { name: "Pessoal", icon: "Pessoal" },
     business: { name: "Negócio", icon: "Negocio" },
     reserve: { name: "Reserva", icon: "Reserva" },
-    distribution: { personal: 50, business: 40, reserve: 10 },
+    distribution: { personal: 45, business: 40, reserve: 15 },
   };
 }
 
@@ -996,7 +997,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? normalizeNewIncomeAmounts(transactionInput, paymentFeeSettings)
         : null;
     const movementAmount = incomeAmounts?.netAmount ?? normalizedAmount;
-    const inputPot = transactionInput.potId ? pots.find((pot) => pot.id === transactionInput.potId) : undefined;
+    const inputPot = transactionInput.potId
+      ? pots.find((pot) => pot.id === transactionInput.potId)
+      : transactionInput.type === TransactionType.EXPENSE
+        ? resolvePotByType(transactionInput.type, pots)
+        : undefined;
+    if (transactionInput.type === TransactionType.EXPENSE) {
+      const potValidation = validatePotExpense(normalizedAmount, inputPot?.id, pots);
+      if (!potValidation.ok) {
+        const missing = potValidation.missingAmount.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        });
+        return {
+          ok: false,
+          error: `Esse pote nao tem saldo suficiente para essa saida. Faltam ${missing}.`,
+        };
+      }
+    }
     const transaction: Transaction = {
       ...transactionInput,
       id: transactionInput.id ?? createId("tx"),
@@ -1483,9 +1501,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const payAdjustmentAccount = useCallback(
     (accountId: string) => {
-      let borrowed = false;
-
-      const account = adjustmentAccounts.find((item) => item.id === accountId);
+      const account = adjustmentAccounts.find((item) => item.id === accountId)!;
       if (!account) return { ok: false, error: "Conta não encontrada" };
       if (account.status === "pago" && account.type !== "fixa") {
         return { ok: false, error: "Conta já está paga" };
@@ -1496,20 +1512,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ? pot.type === PotType.PERSONAL || pot.name.toLowerCase().includes("pess")
           : pot.type === PotType.BUSINESS || pot.name.toLowerCase().includes("neg")
       );
-      const secondaryPot = pots.find((pot) => pot.id !== primaryPot?.id);
       if (!primaryPot) return { ok: false, error: "Pote principal não encontrado" };
 
       const amount = account.amount;
+      let borrowed = false;
+      const remaining = 0;
+      const secondaryPot = primaryPot;
+      if (primaryPot.balance < amount) {
+        const missing = Math.max(0, amount - primaryPot.balance).toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        });
+        return {
+          ok: false,
+          error: `Esse pote nao tem saldo suficiente para essa saida. Faltam ${missing}.`,
+        };
+      }
 
-      const primaryUse = Math.min(primaryPot.balance, amount);
-      const remaining = Number((amount - primaryUse).toFixed(2));
+      const primaryUse = amount;
 
       if (primaryUse > 0) {
         addTransaction({
           type: TransactionType.EXPENSE,
           amount: primaryUse,
           description: `Pagamento conta: ${account.name}`,
-          category: account.category,
+          category: account!.category,
           date: todayIso(),
           account: "Conta Corrente",
           potId: primaryPot.id,
@@ -1518,7 +1545,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      if (remaining > 0) {
+      if (false) {
         if (!secondaryPot) {
           return { ok: false, error: "Saldo insuficiente e sem pote de apoio" };
         }
@@ -1532,7 +1559,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           account: "Conta Corrente",
           potId: secondaryPot.id,
           origin: "Ajustes/Contas",
-          notes: `Conta ${account.id} com emprestimo`,
+          notes: `Conta ${account!.id} com emprestimo`,
         });
       }
 
@@ -1559,7 +1586,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         })
       );
 
-      return { ok: true, borrowedFromOtherPot: borrowed };
+      return { ok: true, borrowedFromOtherPot: false };
     },
     [adjustmentAccounts, pots, addTransaction]
   );

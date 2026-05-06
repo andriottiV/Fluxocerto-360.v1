@@ -3,7 +3,9 @@ import { AlertTriangle, CalendarDays, CheckCircle2, CreditCard, HandCoins, Mic, 
 import { toast } from "sonner";
 
 import { useApp } from "@/contexts/AppContext";
+import { validatePotExpense } from "@/lib/finance";
 import { PaymentMethod, TransactionType } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { parseFinancialVoiceCommand, type ParsedVoiceCommand } from "@/lib/voice/financialVoiceParser";
 
@@ -70,6 +72,17 @@ type VoicePreviewForm = {
   paymentMethod?: PaymentMethod;
 };
 
+type InsufficientPotBalanceState = {
+  amount: number;
+  missingAmount: number;
+  primaryPotId: string;
+  primaryPotName: string;
+  primaryPotBalance: number;
+  suggestedPotId?: string;
+  suggestedPotName?: string;
+  suggestedPotBalance?: number;
+};
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -111,6 +124,8 @@ export default function TransactionModal({
   const [voicePreview, setVoicePreview] = useState<VoicePreviewForm | null>(null);
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [voiceAutoStarted, setVoiceAutoStarted] = useState(false);
+  const [insufficientPotBalance, setInsufficientPotBalance] = useState<InsufficientPotBalanceState | null>(null);
+  const [complementPotId, setComplementPotId] = useState("");
 
   const {
     supported: voiceSupported,
@@ -177,6 +192,8 @@ export default function TransactionModal({
     setVoicePreview(null);
     setVoiceProcessing(false);
     setVoiceAutoStarted(false);
+    setInsufficientPotBalance(null);
+    setComplementPotId("");
   }, [isOpen, presetType, personalPot?.id]);
 
   useEffect(() => {
@@ -409,14 +426,32 @@ export default function TransactionModal({
       return;
     }
 
+    const amount = Number(expense.value);
+    const potValidation = validatePotExpense(amount, expense.potId, pots);
+    if (!potValidation.ok && potValidation.pot) {
+      setInsufficientPotBalance({
+        amount,
+        missingAmount: potValidation.missingAmount,
+        primaryPotId: potValidation.pot.id,
+        primaryPotName: potValidation.pot.name,
+        primaryPotBalance: Number(potValidation.pot.balance),
+        suggestedPotId: potValidation.suggestedPot?.id,
+        suggestedPotName: potValidation.suggestedPot?.name,
+        suggestedPotBalance: potValidation.suggestedPot?.balance,
+      });
+      setComplementPotId(potValidation.suggestedPot?.id ?? "");
+      toast.warning("Esse pote nao tem saldo suficiente para essa saida.");
+      return;
+    }
+
     setIsSaving(true);
 
     const result = addTransaction({
       type: TransactionType.EXPENSE,
-      amount: Number(expense.value),
-      grossAmount: Number(expense.value),
+      amount,
+      grossAmount: amount,
       feeAmount: 0,
-      netAmount: Number(expense.value),
+      netAmount: amount,
       description: expense.description,
       category: expense.category,
       date: expense.date || todayIso(),
@@ -433,6 +468,77 @@ export default function TransactionModal({
     }
 
     toast.success("Saida registrada");
+    onSuccess?.();
+    closeModal();
+  };
+
+  const complementExpenseWithOtherPot = () => {
+    if (!insufficientPotBalance) return;
+
+    const supportPot = pots.find((pot) => pot.id === complementPotId);
+    if (!supportPot) {
+      toast.error("Escolha um pote para complementar.");
+      return;
+    }
+
+    const supportValidation = validatePotExpense(insufficientPotBalance.missingAmount, supportPot.id, pots);
+    if (!supportValidation.ok) {
+      toast.error("O pote escolhido tambem nao tem saldo suficiente para complementar.");
+      return;
+    }
+
+    setIsSaving(true);
+
+    const primaryUse = Math.min(insufficientPotBalance.primaryPotBalance, insufficientPotBalance.amount);
+    const commonNotes = `Saida complementada por outro pote. Pote original: ${insufficientPotBalance.primaryPotName}. Pote de complemento: ${supportPot.name}.`;
+
+    if (primaryUse > 0) {
+      const primaryResult = addTransaction({
+        type: TransactionType.EXPENSE,
+        amount: primaryUse,
+        grossAmount: primaryUse,
+        feeAmount: 0,
+        netAmount: primaryUse,
+        description: expense.description,
+        category: expense.category,
+        date: expense.date || todayIso(),
+        account: defaultAccount,
+        potId: insufficientPotBalance.primaryPotId,
+        origin: "Saida rapida",
+        source: "manual",
+        notes: `${commonNotes} Parte do pote original: ${formatCurrency(primaryUse)}.`,
+      });
+
+      if (!primaryResult.ok) {
+        toast.error(primaryResult.error ?? "Falha ao salvar a parte do pote original.");
+        setIsSaving(false);
+        return;
+      }
+    }
+
+    const complementResult = addTransaction({
+      type: TransactionType.EXPENSE,
+      amount: insufficientPotBalance.missingAmount,
+      grossAmount: insufficientPotBalance.missingAmount,
+      feeAmount: 0,
+      netAmount: insufficientPotBalance.missingAmount,
+      description: `${expense.description} (complemento)`,
+      category: expense.category,
+      date: expense.date || todayIso(),
+      account: defaultAccount,
+      potId: supportPot.id,
+      origin: "Saida rapida",
+      source: "manual",
+      notes: `${commonNotes} Complemento: ${formatCurrency(insufficientPotBalance.missingAmount)}.`,
+    });
+
+    if (!complementResult.ok) {
+      toast.error(complementResult.error ?? "Falha ao salvar o complemento.");
+      setIsSaving(false);
+      return;
+    }
+
+    toast.success("Saida registrada com complemento confirmado.");
     onSuccess?.();
     closeModal();
   };
@@ -642,29 +748,38 @@ export default function TransactionModal({
         {type === TransactionType.INCOME ? (
           <div className="fd-income-flow">
             <section className="fd-flow-panel">
-              <div className="fd-flow-title">
+              <div className="fd-flow-title fd-flow-title-stacked">
                 <Sparkles className="h-4 w-4" />
                 <span>Lançamento rápido por serviço</span>
+                <p>Escolha a forma de pagamento e registre rapidamente um serviço já configurado.</p>
               </div>
 
-              <div className="fd-chip-grid">
-                {services.map((service) => (
-                  <button
-                    key={service.id}
-                    type="button"
-                    className={`fd-chip ${selectedServiceId === service.id ? "active" : ""}`}
-                    onClick={() => setSelectedServiceId(service.id)}
-                  >
-                    <span>{service.name}</span>
-                    <strong>R$ {service.price.toFixed(2)}</strong>
-                  </button>
-                ))}
-              </div>
+              {services.length > 0 ? (
+                <div className="fd-chip-grid">
+                  {services.map((service) => (
+                    <button
+                      key={service.id}
+                      type="button"
+                      className={`fd-chip ${selectedServiceId === service.id ? "active" : ""}`}
+                      onClick={() => setSelectedServiceId(service.id)}
+                    >
+                      <span>{service.name}</span>
+                      <strong>R$ {service.price.toFixed(2)}</strong>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="fd-flow-empty-state">
+                  <strong>Você ainda não tem serviços cadastrados.</strong>
+                  <p>Cadastre um serviço em Ajustes &gt; Serviços para usar o lançamento rápido.</p>
+                </div>
+              )}
 
               <div className="fd-flow-subtitle">
                 <CreditCard className="h-4 w-4" />
                 <span>Forma de pagamento</span>
               </div>
+              <p className="fd-flow-helper">Taxas podem ser aplicadas conforme a forma escolhida.</p>
 
               <div className="fd-chip-row">
                 {INCOME_PAYMENT_OPTIONS.map((option) => (
@@ -679,9 +794,9 @@ export default function TransactionModal({
                 ))}
               </div>
 
-              <button type="button" className="fd-primary-btn fd-flow-submit" disabled={isSaving} onClick={saveServiceIncome}>
+              <button type="button" className="fd-primary-btn fd-flow-submit" disabled={isSaving || services.length === 0} onClick={saveServiceIncome}>
                 <CheckCircle2 className="h-4 w-4" />
-                Confirmar entrada
+                Registrar serviço rápido
               </button>
             </section>
 
@@ -783,6 +898,63 @@ export default function TransactionModal({
           </div>
         ) : (
           <div className="fd-expense-flow">
+            {insufficientPotBalance ? (
+              <section className="fd-insufficient-pot-panel" aria-live="polite">
+                <div className="fd-insufficient-pot-title">
+                  <AlertTriangle className="h-4 w-4" />
+                  <strong>Esse pote nao tem saldo suficiente para essa saida.</strong>
+                </div>
+                <p>
+                  No pote {insufficientPotBalance.primaryPotName}, faltam{" "}
+                  <strong>{formatCurrency(insufficientPotBalance.missingAmount)}</strong>.
+                </p>
+                {insufficientPotBalance.suggestedPotId ? (
+                  <p>
+                    Sugestao: complementar com {insufficientPotBalance.suggestedPotName} (
+                    {formatCurrency(insufficientPotBalance.suggestedPotBalance ?? 0)} disponivel).
+                  </p>
+                ) : (
+                  <p>Nenhum outro pote tem saldo suficiente para cobrir o valor faltante sozinho.</p>
+                )}
+                <label>
+                  Deseja complementar usando outro pote?
+                  <select value={complementPotId} onChange={(event) => setComplementPotId(event.target.value)}>
+                    <option value="">Escolher pote</option>
+                    {pots
+                      .filter((pot) => pot.id !== insufficientPotBalance.primaryPotId)
+                      .map((pot) => (
+                        <option key={pot.id} value={pot.id}>
+                          {pot.name} - {formatCurrency(pot.balance)}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <div className="fd-insufficient-pot-actions">
+                  <button type="button" className="fd-mini-btn" onClick={closeModal}>
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="fd-ghost-btn"
+                    onClick={() => {
+                      setInsufficientPotBalance(null);
+                      setComplementPotId("");
+                    }}
+                  >
+                    Editar saida
+                  </button>
+                  <button
+                    type="button"
+                    className="fd-primary-btn"
+                    disabled={isSaving || !complementPotId}
+                    onClick={complementExpenseWithOtherPot}
+                  >
+                    Complementar com outro pote
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
             <section className="fd-flow-panel">
               <div className="fd-flow-grid">
                 <label>

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownCircle,
@@ -10,12 +10,15 @@ import {
   HandCoins,
   Landmark,
   PiggyBank,
+  Upload,
   ShieldCheck,
   TrendingUp,
   WalletCards,
 } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
+import MoneyValue from "@/components/ui/MoneyValue";
+import StatementImportModal from "@/components/dashboard/shared/StatementImportModal";
 import {
   buildDailyTotals,
   calculateTotals,
@@ -106,20 +109,21 @@ function MetricCard({
 }) {
   return (
     <article className={`fd-cash-metric ${tone}`}>
-      <span>
-        <Icon className="h-5 w-5" />
-      </span>
-      <div>
+      <div className="fd-cash-metric-head">
+        <span>
+          <Icon className="h-5 w-5" />
+        </span>
         <p>{label}</p>
-        <strong>{value}</strong>
-        <small>{helper}</small>
       </div>
+      <MoneyValue value={value} size="md" />
+      <small>{helper}</small>
     </article>
   );
 }
 
 export default function FinanceiroModule() {
   const { transactions, costs, potDistribution, pots } = useApp();
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const realTransactions = useMemo(() => transactions.filter((tx) => !isOnboardingSeed(tx)), [transactions]);
   const monthTransactions = useMemo(
@@ -173,9 +177,15 @@ export default function FinanceiroModule() {
           <h2>Dinheiro real</h2>
           <p>Isso aqui é só o que já entrou de verdade.</p>
         </div>
-        <div className="fd-cash-month">
-          <CalendarDays className="h-4 w-4" />
-          {monthLabel()}
+        <div className="fd-cash-header-actions">
+          <button type="button" className="fd-ghost-btn" onClick={() => setIsImportOpen(true)}>
+            <Upload className="h-4 w-4" />
+            Importar extrato
+          </button>
+          <div className="fd-cash-month">
+            <CalendarDays className="h-4 w-4" />
+            {monthLabel()}
+          </div>
         </div>
       </header>
 
@@ -200,7 +210,7 @@ export default function FinanceiroModule() {
           </div>
           <div className="fd-cash-control-number">
             <small>Lucro líquido</small>
-            <strong>{formatCurrency(lucroLiquido)}</strong>
+            <MoneyValue value={formatCurrency(lucroLiquido)} size="lg" />
           </div>
         </article>
 
@@ -429,6 +439,7 @@ export default function FinanceiroModule() {
           </div>
         </article>
       </section>
+      <StatementImportModal isOpen={isImportOpen} onClose={() => setIsImportOpen(false)} />
     </section>
   );
 }

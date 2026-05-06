@@ -2,206 +2,233 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  Banknote,
+  BriefcaseBusiness,
+  CalendarDays,
   Check,
   CheckCircle2,
-  CircleDollarSign,
+  CreditCard,
+  Home,
   Layers3,
+  PiggyBank,
+  ReceiptText,
   ShieldCheck,
+  Sparkles,
   Target,
   TrendingUp,
   WalletCards,
+  Wifi,
+  Zap,
 } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
 import BrandLogo from "@/components/ui/BrandLogo";
 import { getUserOnboardingData, isUserOnboardingCompleted, markUserOnboardingCompleted, saveUserOnboardingData } from "@/lib/auth";
-import { PotType, ScreenType, type OnboardingFinancialMode, type PotDistribution } from "@/lib/types";
+import { ScreenType, type OnboardingFinancialMode, type OnboardingUsageMode, type PotDistribution } from "@/lib/types";
 
-type OnboardingFocus = "precificacao" | "seguranca" | null;
-type OnboardingFinancialPain = "mix_money" | "money_disappears" | "no_profit" | "no_reserve";
-type OnboardingFinancialStructure = "apertado" | "equilibrado" | "folga";
-type OnboardingGoalConfidence = "yes" | "almost" | "far";
 type OnboardingStep = 1 | 2 | 3 | 4;
+type ReceivingMethod = "pix" | "dinheiro" | "debito" | "credito" | "recorrencia";
+type FixedExpenseId = "aluguel" | "internet" | "energia" | "fornecedores" | "outros";
+type Priority = "organizar" | "aperto" | "reserva" | "crescer";
 
 type OnboardingState = {
-  step: number;
-  flag_separacao: boolean;
-  focus: OnboardingFocus;
-  porcentagens: {
-    negocio: number;
-    pessoal: number;
-    reserva: number;
-  };
-  metaMensal: number;
-  goalConfidence: OnboardingGoalConfidence | null;
+  step: OnboardingStep;
+  usageMode: OnboardingUsageMode | null;
+  receivingMethods: ReceivingMethod[];
+  fixedExpenses: FixedExpenseId[];
+  priority: Priority | null;
 };
 
 const INITIAL_STATE: OnboardingState = {
   step: 1,
-  flag_separacao: false,
-  focus: null,
-  porcentagens: {
-    negocio: 35,
-    pessoal: 45,
-    reserva: 20,
-  },
-  metaMensal: 0,
-  goalConfidence: null,
+  usageMode: null,
+  receivingMethods: [],
+  fixedExpenses: [],
+  priority: null,
 };
 
-const GOAL_CONFIDENCE_OPTIONS = [
-  { id: "yes", label: "Sim" },
-  { id: "almost", label: "Quase" },
-  { id: "far", label: "Nem perto" },
-] as const;
-
-const DIAGNOSTIC_OPTIONS = [
+const USAGE_OPTIONS = [
   {
-    id: "mix_money",
-    title: "Misturo tudo e não sei o que é meu",
-    description: "Misturo dinheiro pessoal e do negócio e nunca sei quanto realmente sobrou",
-    feedback: "Vamos separar seu dinheiro pessoal do negócio e te mostrar, pela primeira vez, o que realmente sobra.",
+    id: "personal",
+    title: "Pessoal",
+    description: "Organizar meu dinheiro pessoal e criar reserva.",
+    feedback: "Vamos ativar PF + Reserva para separar o essencial sem complicar.",
+    icon: Home,
+    distribution: { personal: 80, business: 0, reserve: 20 },
+  },
+  {
+    id: "business",
+    title: "Negocio",
+    description: "Organizar dinheiro do trabalho, vendas e custos.",
+    feedback: "Vamos ativar PJ + Reserva para proteger o caixa do negocio.",
+    icon: BriefcaseBusiness,
+    distribution: { personal: 0, business: 80, reserve: 20 },
+  },
+  {
+    id: "both",
+    title: "Ambos",
+    description: "Separar vida pessoal, negocio e reserva.",
+    feedback: "Vamos ativar PF + PJ + Reserva com cada dinheiro no lugar certo.",
     icon: Layers3,
+    distribution: { personal: 45, business: 40, reserve: 15 },
+  },
+] as const satisfies ReadonlyArray<{
+  id: OnboardingUsageMode;
+  title: string;
+  description: string;
+  feedback: string;
+  icon: React.ElementType;
+  distribution: PotDistribution;
+}>;
+
+const RECEIVING_OPTIONS = [
+  {
+    id: "pix",
+    title: "Pix",
+    description: "Recebimentos rapidos e diretos.",
+    feedback: "Pix ajuda a enxergar entrada quase em tempo real.",
+    icon: Zap,
   },
   {
-    id: "money_disappears",
-    title: "O dinheiro entra, mas some",
-    description: "Eu faturo, mas no fim do mês não consigo entender para onde o dinheiro foi",
-    feedback: "Vamos organizar suas entradas e saídas para você entender exatamente para onde seu dinheiro está indo.",
+    id: "dinheiro",
+    title: "Dinheiro",
+    description: "Pagamento em especie.",
+    feedback: "Vamos lembrar que dinheiro fisico tambem precisa de direcao.",
+    icon: Banknote,
+  },
+  {
+    id: "debito",
+    title: "Debito",
+    description: "Venda com taxa de pagamento.",
+    feedback: "Debito fica salvo como preferencia para uso futuro.",
+    icon: CreditCard,
+  },
+  {
+    id: "credito",
+    title: "Credito",
+    description: "Venda com prazo e taxa.",
+    feedback: "Credito fica marcado para orientar taxas e recebimentos.",
+    icon: CreditCard,
+  },
+  {
+    id: "recorrencia",
+    title: "Recorrencia",
+    description: "Cliente, assinatura ou mensalidade.",
+    feedback: "Receita recorrente ajuda o app a orientar previsao.",
+    icon: CalendarDays,
+  },
+] as const satisfies ReadonlyArray<{
+  id: ReceivingMethod;
+  title: string;
+  description: string;
+  feedback: string;
+  icon: React.ElementType;
+}>;
+
+const FIXED_EXPENSE_OPTIONS = [
+  {
+    id: "aluguel",
+    title: "Aluguel",
+    description: "Espaco, casa ou sala.",
+    feedback: "Depois o app pode sugerir configurar o valor.",
+    icon: Home,
+  },
+  {
+    id: "internet",
+    title: "Internet",
+    description: "Conexao mensal.",
+    feedback: "Marcado como sugestao, sem lancar gasto agora.",
+    icon: Wifi,
+  },
+  {
+    id: "energia",
+    title: "Energia",
+    description: "Conta de luz.",
+    feedback: "Vai aparecer como sugestao para configurar depois.",
+    icon: Zap,
+  },
+  {
+    id: "fornecedores",
+    title: "Fornecedores",
+    description: "Pagamentos recorrentes do negocio.",
+    feedback: "Nao lancamos nada automaticamente.",
+    icon: BriefcaseBusiness,
+  },
+  {
+    id: "outros",
+    title: "Outros",
+    description: "Algum compromisso mensal.",
+    feedback: "Voce ajusta com calma depois.",
+    icon: ReceiptText,
+  },
+] as const satisfies ReadonlyArray<{
+  id: FixedExpenseId;
+  title: string;
+  description: string;
+  feedback: string;
+  icon: React.ElementType;
+}>;
+
+const PRIORITY_OPTIONS = [
+  {
+    id: "organizar",
+    title: "Organizar",
+    description: "Quero clareza do dinheiro.",
+    feedback: "O app inicia com foco em controle e clareza.",
     icon: WalletCards,
+    financialMode: "breakEven",
   },
   {
-    id: "no_profit",
-    title: "Trabalho, mas não vejo lucro",
-    description: "Eu recebo, pago as coisas... mas não consigo enxergar quanto realmente ganhei",
-    feedback: "Vamos deixar claro quanto você realmente ganha, sem achismo.",
-    icon: TrendingUp,
-  },
-  {
-    id: "no_reserve",
-    title: "Vivo sem segurança financeira",
-    description: "Não tenho reserva e qualquer imprevisto pode virar um problema",
-    feedback: "Vamos estruturar seu dinheiro para você construir uma reserva e ter mais tranquilidade.",
+    id: "aperto",
+    title: "Sair do aperto",
+    description: "Preciso de alertas e controle.",
+    feedback: "O app inicia com foco em alertas e protecao de caixa.",
     icon: ShieldCheck,
-  },
-] as const;
-
-const STRUCTURE_OPTIONS = [
-  {
-    id: "apertado",
-    title: "Meu dinheiro vive apertado",
-    description: "Preciso usar boa parte do que entra para manter minha vida e o negócio funcionando",
-    feedback: "Vamos priorizar a estabilidade do seu negócio e organizar seu dinheiro para você sair do aperto com segurança.",
-    porcentagens: { negocio: 55, pessoal: 30, reserva: 15 },
+    financialMode: "chaos",
   },
   {
-    id: "equilibrado",
-    title: "Dá para manter, mas sem folga",
-    description: "Consigo me pagar, mas ainda preciso cuidar bem do dinheiro para não faltar",
-    feedback: "Vamos organizar seu dinheiro para você se pagar melhor, manter o negócio saudável e começar a construir reserva.",
-    porcentagens: { negocio: 35, pessoal: 45, reserva: 20 },
+    id: "reserva",
+    title: "Guardar reserva",
+    description: "Quero construir seguranca.",
+    feedback: "O app inicia com foco em poupar e proteger reserva.",
+    icon: PiggyBank,
+    financialMode: "surplus",
   },
   {
-    id: "folga",
-    title: "Sobra dinheiro com frequência",
-    description: "Meu dinheiro cobre tudo e ainda consigo guardar ou investir",
-    feedback: "Vamos estruturar seu dinheiro para você tirar mais para você, fortalecer seu negócio e acelerar a construção da sua reserva.",
-    porcentagens: { negocio: 25, pessoal: 50, reserva: 25 },
+    id: "crescer",
+    title: "Crescer o negocio",
+    description: "Quero olhar lucro e analise.",
+    feedback: "O app inicia com foco em analise, margem e lucro.",
+    icon: TrendingUp,
+    financialMode: "growth",
   },
-] as const;
+] as const satisfies ReadonlyArray<{
+  id: Priority;
+  title: string;
+  description: string;
+  feedback: string;
+  icon: React.ElementType;
+  financialMode: OnboardingFinancialMode;
+}>;
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 2,
-  }).format(Number.isFinite(value) ? value : 0);
+function getUsageDistribution(usageMode: OnboardingUsageMode | null): PotDistribution {
+  return USAGE_OPTIONS.find((option) => option.id === usageMode)?.distribution ?? USAGE_OPTIONS[2].distribution;
 }
 
-function parseCurrencyDigits(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return 0;
-  return Number(digits) / 100;
+function mapPriorityToFinancialMode(priority: Priority | null): OnboardingFinancialMode {
+  return PRIORITY_OPTIONS.find((option) => option.id === priority)?.financialMode ?? "breakEven";
 }
 
-function maskCurrencyInput(value: string) {
-  return formatCurrency(parseCurrencyDigits(value));
-}
-
-function mapFocusToFinancialMode(focus: OnboardingFocus): OnboardingFinancialMode {
-  if (focus === "precificacao") return "growth";
-  if (focus === "seguranca") return "surplus";
-  return "breakEven";
-}
-
-function mapFinancialPainToLegacyFields(financialPain: OnboardingFinancialPain): Pick<OnboardingState, "flag_separacao" | "focus"> {
-  if (financialPain === "mix_money") return { flag_separacao: true, focus: null };
-  if (financialPain === "no_profit") return { flag_separacao: false, focus: "precificacao" };
-  if (financialPain === "no_reserve") return { flag_separacao: false, focus: "seguranca" };
-  return { flag_separacao: false, focus: null };
-}
-
-function inferFinancialPainFromSaved(saved: {
-  financialPain?: unknown;
-  flag_separacao?: boolean;
-  focus?: OnboardingFocus;
-}): OnboardingFinancialPain | null {
-  if (
-    saved.financialPain === "mix_money" ||
-    saved.financialPain === "money_disappears" ||
-    saved.financialPain === "no_profit" ||
-    saved.financialPain === "no_reserve"
-  ) {
-    return saved.financialPain;
-  }
-  if (saved.flag_separacao) return "mix_money";
-  if (saved.focus === "precificacao") return "no_profit";
-  if (saved.focus === "seguranca") return "no_reserve";
-  return null;
-}
-
-function isSameDistribution(
-  value: { negocio: number; pessoal: number; reserva: number } | undefined,
-  expected: { negocio: number; pessoal: number; reserva: number }
-) {
-  if (!value) return false;
-  return (
-    Math.abs(value.negocio - expected.negocio) < 0.001 &&
-    Math.abs(value.pessoal - expected.pessoal) < 0.001 &&
-    Math.abs(value.reserva - expected.reserva) < 0.001
-  );
-}
-
-function inferFinancialStructureFromSaved(saved: {
-  financialStructure?: unknown;
-  porcentagens?: { negocio: number; pessoal: number; reserva: number };
-}): OnboardingFinancialStructure {
-  if (
-    saved.financialStructure === "apertado" ||
-    saved.financialStructure === "equilibrado" ||
-    saved.financialStructure === "folga"
-  ) {
-    return saved.financialStructure;
-  }
-
-  const matched = STRUCTURE_OPTIONS.find((option) => isSameDistribution(saved.porcentagens, option.porcentagens));
-  if (matched) return matched.id;
-
-  if (saved.porcentagens) {
-    if (saved.porcentagens.negocio >= 45 || saved.porcentagens.pessoal <= 35) return "apertado";
-    if (saved.porcentagens.pessoal >= 55) return "folga";
-  }
-
-  return "equilibrado";
-}
-
-function buildGrossRevenueProjection(personalGoal: number, personalPercentage: number) {
-  const monthly = personalGoal > 0 && personalPercentage > 0 ? personalGoal / (personalPercentage / 100) : 0;
-  return {
-    monthly: Number(monthly.toFixed(2)),
-    weekly: Number((monthly / 4.33).toFixed(2)),
-    daily: Number((monthly / 22).toFixed(2)),
-  };
+function toFixedExpenseSuggestions(items: FixedExpenseId[]) {
+  return items.map((id) => {
+    const option = FIXED_EXPENSE_OPTIONS.find((item) => item.id === id);
+    return {
+      name: option?.title ?? id,
+      amount: 0,
+      dueDate: new Date().toISOString().slice(0, 10),
+      category: id === "fornecedores" ? "fornecedores" : id === "internet" ? "internet" : id === "aluguel" ? "moradia" : "outros",
+    };
+  });
 }
 
 export default function OnboardingFlow() {
@@ -211,18 +238,10 @@ export default function OnboardingFlow() {
     setPotDistribution,
     applyOnboardingUsageMode,
     applyOnboardingFinancialMode,
-    updatePotGoal,
-    pots,
   } = useApp();
   const [state, setState] = useState<OnboardingState>(INITIAL_STATE);
-  const [selectedDiagnostic, setSelectedDiagnostic] = useState<OnboardingFinancialPain | null>(null);
-  const [selectedStructure, setSelectedStructure] = useState<OnboardingFinancialStructure>("equilibrado");
-  const [metaInput, setMetaInput] = useState("");
 
   const currentStep = Math.max(1, Math.min(4, state.step)) as OnboardingStep;
-  const personalPercent = Math.max(1, state.porcentagens.pessoal);
-  const grossRevenueProjection = buildGrossRevenueProjection(state.metaMensal, personalPercent);
-  const faturamentoNecessario = grossRevenueProjection.monthly;
   const progress = (currentStep / 4) * 100;
 
   useEffect(() => {
@@ -234,25 +253,34 @@ export default function OnboardingFlow() {
     }
 
     const saved = getUserOnboardingData(user.id);
-    const savedStructure = inferFinancialStructureFromSaved(saved);
-    const savedStructureOption = STRUCTURE_OPTIONS.find((option) => option.id === savedStructure);
-    const savedPercentages =
-      saved.financialStructure || !saved.porcentagens
-        ? saved.porcentagens ?? savedStructureOption?.porcentagens
-        : savedStructureOption?.porcentagens ?? saved.porcentagens;
     setState((prev) => ({
       ...prev,
       step: saved.step ?? prev.step,
-      flag_separacao: saved.flag_separacao ?? prev.flag_separacao,
-      focus: saved.focus ?? prev.focus,
-      porcentagens: savedPercentages ?? prev.porcentagens,
-      metaMensal: saved.metaMensal ?? prev.metaMensal,
-      goalConfidence: saved.goalConfidence ?? prev.goalConfidence,
+      usageMode: saved.usageMode ?? prev.usageMode,
+      receivingMethods: Array.isArray(saved.receivingMethods)
+        ? (saved.receivingMethods.filter((item) =>
+            RECEIVING_OPTIONS.some((option) => option.id === item)
+          ) as ReceivingMethod[])
+        : prev.receivingMethods,
+      fixedExpenses: Array.isArray(saved.fixedExpenseSuggestions)
+        ? (saved.fixedExpenseSuggestions
+            .map((item) => {
+              const normalized = String(item.name ?? "").toLowerCase();
+              return FIXED_EXPENSE_OPTIONS.find((option) => option.title.toLowerCase() === normalized)?.id;
+            })
+            .filter(Boolean) as FixedExpenseId[])
+        : prev.fixedExpenses,
+      priority:
+        saved.priority === "organize"
+          ? "organizar"
+          : saved.priority === "tight"
+            ? "aperto"
+            : saved.priority === "reserve"
+              ? "reserva"
+              : saved.priority === "grow"
+                ? "crescer"
+                : prev.priority,
     }));
-
-    if (saved.metaMensal) setMetaInput(formatCurrency(saved.metaMensal));
-    setSelectedDiagnostic(inferFinancialPainFromSaved(saved));
-    setSelectedStructure(savedStructure);
   }, [goScreen, user?.id]);
 
   const updateFlow = (next: Partial<OnboardingState>) => {
@@ -260,88 +288,95 @@ export default function OnboardingFlow() {
       const merged = { ...prev, ...next };
       if (user?.id) {
         saveUserOnboardingData(user.id, {
-          step: Math.max(1, Math.min(4, merged.step)) as OnboardingStep,
-          flag_separacao: merged.flag_separacao,
-          focus: merged.focus,
-          porcentagens: merged.porcentagens,
-          metaMensal: merged.metaMensal,
-          goalConfidence: merged.goalConfidence ?? undefined,
-          financialMode: mapFocusToFinancialMode(merged.focus),
+          step: merged.step,
+          usageMode: merged.usageMode ?? undefined,
+          receivingMethods: merged.receivingMethods,
+          fixedExpenseSuggestions: toFixedExpenseSuggestions(merged.fixedExpenses),
+          priority:
+            merged.priority === "organizar"
+              ? "organize"
+              : merged.priority === "aperto"
+                ? "tight"
+                : merged.priority === "reserva"
+                  ? "reserve"
+                  : merged.priority === "crescer"
+                    ? "grow"
+                    : undefined,
+          financialMode: mapPriorityToFinancialMode(merged.priority),
+          porcentagens: merged.usageMode
+            ? {
+                pessoal: getUsageDistribution(merged.usageMode).personal,
+                negocio: getUsageDistribution(merged.usageMode).business,
+                reserva: getUsageDistribution(merged.usageMode).reserve,
+              }
+            : undefined,
         });
       }
       return merged;
     });
   };
 
-  const goNext = () => updateFlow({ step: Math.min(4, currentStep + 1) });
-  const goBack = () => updateFlow({ step: Math.max(1, currentStep - 1) });
+  const goNext = () => updateFlow({ step: Math.min(4, currentStep + 1) as OnboardingStep });
+  const goBack = () => updateFlow({ step: Math.max(1, currentStep - 1) as OnboardingStep });
 
-  const handleDiagnostic = (optionId: OnboardingFinancialPain) => {
-    const legacyFields = mapFinancialPainToLegacyFields(optionId);
-    setSelectedDiagnostic(optionId);
+  const canContinue = useMemo(() => {
+    if (currentStep === 1) return Boolean(state.usageMode);
+    if (currentStep === 2) return state.receivingMethods.length > 0;
+    if (currentStep === 3) return true;
+    return Boolean(state.priority);
+  }, [currentStep, state.fixedExpenses.length, state.priority, state.receivingMethods.length, state.usageMode]);
+
+  const toggleReceivingMethod = (method: ReceivingMethod) => {
     updateFlow({
-      ...legacyFields,
+      receivingMethods: state.receivingMethods.includes(method)
+        ? state.receivingMethods.filter((item) => item !== method)
+        : [...state.receivingMethods, method],
     });
-    if (user?.id) {
-      saveUserOnboardingData(user.id, { financialPain: optionId });
-    }
   };
 
-  const handleStructure = (option: (typeof STRUCTURE_OPTIONS)[number]) => {
-    setSelectedStructure(option.id);
-    updateFlow({ porcentagens: option.porcentagens });
-    if (user?.id) {
-      saveUserOnboardingData(user.id, { financialStructure: option.id });
-    }
-  };
-
-  const handleMetaChange = (value: string) => {
-    const nextValue = parseCurrencyDigits(value);
-    setMetaInput(maskCurrencyInput(value));
-    updateFlow({ metaMensal: nextValue });
-  };
-
-  const handleGoalConfidence = (goalConfidence: OnboardingGoalConfidence) => {
-    updateFlow({ goalConfidence });
+  const toggleFixedExpense = (expense: FixedExpenseId) => {
+    updateFlow({
+      fixedExpenses: state.fixedExpenses.includes(expense)
+        ? state.fixedExpenses.filter((item) => item !== expense)
+        : [...state.fixedExpenses, expense],
+    });
   };
 
   const finish = () => {
     if (!user?.id) return;
 
-    const distribution: PotDistribution = {
-      personal: state.porcentagens.pessoal,
-      business: state.porcentagens.negocio,
-      reserve: state.porcentagens.reserva,
-    };
-    const financialMode = mapFocusToFinancialMode(state.focus);
-    const projection = buildGrossRevenueProjection(state.metaMensal, state.porcentagens.pessoal);
+    const usageMode = state.usageMode ?? "both";
+    const distribution = getUsageDistribution(usageMode);
+    const financialMode = mapPriorityToFinancialMode(state.priority);
 
     saveUserOnboardingData(user.id, {
       step: 4,
-      flag_separacao: state.flag_separacao,
-      focus: state.focus,
-      porcentagens: state.porcentagens,
-      metaMensal: state.metaMensal,
-      goalConfidence: state.goalConfidence ?? undefined,
+      usageMode,
+      receivingMethods: state.receivingMethods,
+      fixedExpenseSuggestions: toFixedExpenseSuggestions(state.fixedExpenses),
       financialMode,
-      financialStructure: selectedStructure,
-      personalMonthlyGoal: state.metaMensal,
-      estimatedGrossMonthlyRevenue: projection.monthly,
-      weeklyRevenueTarget: projection.weekly,
-      dailyRevenueTarget: projection.daily,
-      projectedMonthlyGrossRevenue: projection.monthly,
-      projectedWeeklyGrossRevenue: projection.weekly,
-      projectedDailyGrossRevenue: projection.daily,
+      priority:
+        state.priority === "organizar"
+          ? "organize"
+          : state.priority === "aperto"
+            ? "tight"
+            : state.priority === "reserva"
+              ? "reserve"
+              : state.priority === "crescer"
+                ? "grow"
+                : "organize",
+      porcentagens: {
+        pessoal: distribution.personal,
+        negocio: distribution.business,
+        reserva: distribution.reserve,
+      },
+      flag_separacao: usageMode === "both",
+      focus: financialMode === "growth" ? "precificacao" : financialMode === "surplus" ? "seguranca" : null,
     });
 
-    applyOnboardingUsageMode("both");
+    applyOnboardingUsageMode(usageMode);
     setPotDistribution(distribution);
     applyOnboardingFinancialMode(financialMode);
-
-    const personalPot = pots.find((pot) => pot.type === PotType.PERSONAL);
-    if (personalPot && state.metaMensal > 0) {
-      updatePotGoal(personalPot.id, state.metaMensal);
-    }
 
     markUserOnboardingCompleted(user.id);
     goScreen(ScreenType.DASHBOARD);
@@ -352,19 +387,19 @@ export default function OnboardingFlow() {
       return (
         <div className="grid gap-6">
           <StepHeader
-            eyebrow="Diagnóstico"
-            title="Hoje, qual dessas situações mais representa sua relação com o dinheiro?"
-            subtitle="Não precisa ser perfeito. Escolha o que mais se aproxima do que você vive hoje."
+            eyebrow="Contexto"
+            title="Como voce quer organizar seu dinheiro?"
+            subtitle="Isso ajuda a separar seu dinheiro da forma certa."
           />
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {DIAGNOSTIC_OPTIONS.map((option) => {
+            {USAGE_OPTIONS.map((option) => {
               const Icon = option.icon;
-              const selected = selectedDiagnostic === option.id;
+              const selected = state.usageMode === option.id;
               return (
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => handleDiagnostic(option.id)}
+                  onClick={() => updateFlow({ usageMode: option.id })}
                   className={`group relative min-h-[190px] rounded-3xl border p-5 text-left backdrop-blur-xl transition duration-300 hover:scale-[1.02] ${
                     selected
                       ? "border-emerald-300/70 bg-emerald-400/12 shadow-[0_0_34px_rgba(34,197,94,0.20)]"
@@ -394,7 +429,7 @@ export default function OnboardingFlow() {
               );
             })}
           </div>
-          <PrimaryAction disabled={!selectedDiagnostic} onClick={goNext}>Continuar</PrimaryAction>
+          <PrimaryAction disabled={!canContinue} onClick={goNext}>Continuar</PrimaryAction>
         </div>
       );
     }
@@ -403,30 +438,33 @@ export default function OnboardingFlow() {
       return (
         <div className="grid gap-6">
           <StepHeader
-            eyebrow="Estrutura"
-            title="Hoje, olhando sua vida no geral, como está seu dinheiro?"
-            subtitle="Pense no que sobra no fim do mês, não só no que entra."
+            eyebrow="Entradas"
+            title="Como voce recebe seu dinheiro?"
+            subtitle="Selecione todas as formas que fazem sentido hoje."
           />
-          <div className="grid gap-4 md:grid-cols-3">
-            {STRUCTURE_OPTIONS.map((option) => {
-              const selected = selectedStructure === option.id;
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {RECEIVING_OPTIONS.map((option) => {
+              const Icon = option.icon;
+              const selected = state.receivingMethods.includes(option.id);
               return (
                 <button
                   key={option.id}
                   type="button"
-                  onClick={() => handleStructure(option)}
-                  className={`rounded-3xl border p-5 text-left transition duration-300 hover:scale-[1.02] ${
+                  onClick={() => toggleReceivingMethod(option.id)}
+                  className={`group relative min-h-[190px] rounded-3xl border p-5 text-left backdrop-blur-xl transition duration-300 hover:scale-[1.02] ${
                     selected
-                      ? "border-emerald-300/70 bg-emerald-400/12 shadow-[0_0_34px_rgba(34,197,94,0.18)]"
+                      ? "border-emerald-300/70 bg-emerald-400/12 shadow-[0_0_34px_rgba(34,197,94,0.20)]"
                       : "border-emerald-300/12 bg-white/[0.035] hover:border-emerald-300/30 hover:bg-emerald-400/[0.06]"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-xl font-black tracking-[-0.03em] text-white">{option.title}</h3>
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-emerald-300/18 bg-emerald-400/10 text-emerald-300">
+                      <Icon className="h-6 w-6" />
+                    </span>
                     {selected ? <CheckCircle2 className="h-6 w-6 text-emerald-300" /> : null}
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-400">{option.description}</p>
-                  <DistributionBars distribution={option.porcentagens} selected={selected} />
+                  <h3 className="mt-7 text-xl font-black tracking-[-0.03em] text-white">{option.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-400">{option.description}</p>
                   {selected ? (
                     <p className="mt-4 rounded-2xl border border-emerald-300/14 bg-emerald-400/8 p-3 text-xs font-semibold leading-5 text-emerald-50">
                       {option.feedback}
@@ -436,78 +474,52 @@ export default function OnboardingFlow() {
               );
             })}
           </div>
-          <PrimaryAction disabled={!selectedStructure} onClick={goNext}>Continuar</PrimaryAction>
+          <PrimaryAction disabled={!canContinue} onClick={goNext}>Continuar</PrimaryAction>
         </div>
       );
     }
 
     if (currentStep === 3) {
-      const metaSemanal = faturamentoNecessario / 4.33;
-      const metaDiaria = faturamentoNecessario / 22;
-
       return (
         <div className="grid gap-6">
           <StepHeader
-            eyebrow="Meta"
-            title="Quanto você precisa por mês para viver sem aperto?"
-            subtitle="Pense nas suas contas reais do dia a dia."
+            eyebrow="Gastos fixos"
+            title="Quais desses voce paga todo mes?"
+            subtitle="Nao vamos lancar nada automaticamente. Isso vira sugestao para configurar depois."
           />
-          <div className="rounded-[30px] border border-emerald-300/12 bg-white/[0.035] p-5 backdrop-blur-xl sm:p-7">
-            <label className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300/80">Valor monetário em R$</label>
-            <div className="mt-4 flex items-center rounded-3xl border border-emerald-300/18 bg-black/24 px-5 focus-within:border-emerald-300/55 focus-within:ring-4 focus-within:ring-emerald-400/10">
-              <CircleDollarSign className="h-6 w-6 text-emerald-300" />
-              <input
-                value={metaInput}
-                onChange={(event) => handleMetaChange(event.target.value)}
-                inputMode="numeric"
-                placeholder="R$ 0,00"
-                className="h-20 w-full bg-transparent px-4 text-4xl font-black tracking-[-0.04em] text-white outline-none placeholder:text-slate-600"
-              />
-            </div>
-            <p className="mt-3 text-sm font-semibold leading-6 text-slate-400">Não precisa ser perfeito. Você pode ajustar depois.</p>
-            <div className="mt-5 rounded-2xl border border-emerald-300/12 bg-emerald-400/8 p-4 text-sm font-semibold leading-6 text-slate-200">
-              {state.metaMensal > 0 ? (
-                <div className="grid gap-4">
-                  <p>
-                    Para você ter <strong className="text-emerald-300">{formatCurrency(state.metaMensal)}</strong> no seu bolso todo mês, seu negócio precisa gerar aproximadamente{" "}
-                    <strong className="text-emerald-300">{formatCurrency(faturamentoNecessario)}</strong> de faturamento bruto mensal.
-                  </p>
-                  <p>Esse valor ainda não é lucro — ele inclui tudo que entra antes de custos, taxas e despesas.</p>
-                  <p>Depois disso, o sistema separa automaticamente seu dinheiro pessoal, o caixa do negócio e sua reserva.</p>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <ProjectionCard label="Faturamento mensal necessário" value={formatCurrency(faturamentoNecessario)} />
-                    <ProjectionCard label="Meta semanal" value={formatCurrency(metaSemanal)} />
-                    <ProjectionCard label="Meta diária" value={formatCurrency(metaDiaria)} />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {FIXED_EXPENSE_OPTIONS.map((option) => {
+              const Icon = option.icon;
+              const selected = state.fixedExpenses.includes(option.id);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => toggleFixedExpense(option.id)}
+                  className={`group relative min-h-[190px] rounded-3xl border p-5 text-left backdrop-blur-xl transition duration-300 hover:scale-[1.02] ${
+                    selected
+                      ? "border-emerald-300/70 bg-emerald-400/12 shadow-[0_0_34px_rgba(34,197,94,0.20)]"
+                      : "border-emerald-300/12 bg-white/[0.035] hover:border-emerald-300/30 hover:bg-emerald-400/[0.06]"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="grid h-12 w-12 place-items-center rounded-2xl border border-emerald-300/18 bg-emerald-400/10 text-emerald-300">
+                      <Icon className="h-6 w-6" />
+                    </span>
+                    {selected ? <CheckCircle2 className="h-6 w-6 text-emerald-300" /> : null}
                   </div>
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300/80">Hoje você consegue tirar esse valor?</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      {GOAL_CONFIDENCE_OPTIONS.map((option) => {
-                        const selected = state.goalConfidence === option.id;
-                        return (
-                          <button
-                            key={option.id}
-                            type="button"
-                            onClick={() => handleGoalConfidence(option.id)}
-                            className={`h-12 rounded-2xl border px-4 text-sm font-black transition ${
-                              selected
-                                ? "border-emerald-300/70 bg-emerald-400/18 text-emerald-50"
-                                : "border-emerald-300/14 bg-black/18 text-slate-200 hover:border-emerald-300/35 hover:bg-emerald-400/10"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                "Informe uma meta para calcular o faturamento bruto mensal necessário."
-              )}
-            </div>
+                  <h3 className="mt-7 text-xl font-black tracking-[-0.03em] text-white">{option.title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-400">{option.description}</p>
+                  {selected ? (
+                    <p className="mt-4 rounded-2xl border border-emerald-300/14 bg-emerald-400/8 p-3 text-xs font-semibold leading-5 text-emerald-50">
+                      {option.feedback}
+                    </p>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
-          <PrimaryAction disabled={state.metaMensal <= 0} onClick={goNext}>Continuar</PrimaryAction>
+          <PrimaryAction onClick={goNext}>Continuar</PrimaryAction>
         </div>
       );
     }
@@ -520,51 +532,50 @@ export default function OnboardingFlow() {
         </div>
         <div>
           <StepHeader
-            eyebrow="Ativação"
-            title="Seu dinheiro agora tem direção."
-            subtitle="A partir de agora, toda entrada será organizada automaticamente."
+            eyebrow="Prioridade"
+            title="O que voce mais precisa agora?"
+            subtitle="Isso define o modo inicial do app."
           />
-          <div className="mt-6 rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-4 text-sm font-semibold leading-6 text-slate-300">
-            <p>Antes de dividir o dinheiro, o sistema desconta as taxas.</p>
-            <p className="mt-2">Depois disso, o valor é separado entre:</p>
-          </div>
-          <div className="mt-5 grid gap-3">
-            <ActivationPotRow
-              label="Seu negócio"
-              helper="mantém a máquina rodando"
-              value={state.porcentagens.negocio}
-              color="bg-emerald-400"
-            />
-            <ActivationPotRow
-              label="Seu dinheiro pessoal"
-              helper="o que vai para o seu bolso"
-              value={state.porcentagens.pessoal}
-              color="bg-sky-400"
-            />
-            <ActivationPotRow
-              label="Sua reserva"
-              helper="sua segurança"
-              value={state.porcentagens.reserva}
-              color="bg-amber-300"
-            />
-          </div>
-          <div className="mt-6 rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-4 text-sm leading-6 text-slate-300">
-            Meta livre mensal: <strong className="text-emerald-300">{formatCurrency(state.metaMensal)}</strong>
-            <br />
-            Faturamento bruto mensal necessário: <strong className="text-emerald-300">{formatCurrency(faturamentoNecessario)}</strong>
-            <br />
-            Meta semanal: <strong className="text-emerald-300">{formatCurrency(grossRevenueProjection.weekly)}</strong>
-            <br />
-            Meta diária: <strong className="text-emerald-300">{formatCurrency(grossRevenueProjection.daily)}</strong>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {PRIORITY_OPTIONS.map((option) => {
+              const Icon = option.icon;
+              const selected = state.priority === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => updateFlow({ priority: option.id })}
+                  className={`rounded-3xl border p-5 text-left transition duration-300 hover:scale-[1.02] ${
+                    selected
+                      ? "border-emerald-300/70 bg-emerald-400/12 shadow-[0_0_34px_rgba(34,197,94,0.18)]"
+                      : "border-emerald-300/12 bg-white/[0.035] hover:border-emerald-300/30 hover:bg-emerald-400/[0.06]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl border border-emerald-300/18 bg-emerald-400/10 text-emerald-300">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    {selected ? <CheckCircle2 className="h-6 w-6 text-emerald-300" /> : null}
+                  </div>
+                  <h3 className="mt-5 text-lg font-black tracking-[-0.03em] text-white">{option.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">{option.description}</p>
+                  {selected ? (
+                    <p className="mt-4 rounded-2xl border border-emerald-300/14 bg-emerald-400/8 p-3 text-xs font-semibold leading-5 text-emerald-50">
+                      {option.feedback}
+                    </p>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
           <div className="mt-5 rounded-2xl border border-emerald-300/16 bg-emerald-400/10 p-4 text-sm font-black leading-6 text-emerald-50">
-            Seguindo esse plano, você deixa de trabalhar sem ver resultado.
+            Voce nao precisa saber tudo agora. A gente te ajuda a organizar no caminho.
           </div>
-          <PrimaryAction onClick={finish}>Começar a organizar meu dinheiro</PrimaryAction>
+          <PrimaryAction disabled={!canContinue} onClick={finish}>Comecar a organizar meu dinheiro</PrimaryAction>
         </div>
       </div>
     );
-  }, [currentStep, faturamentoNecessario, metaInput, selectedDiagnostic, selectedStructure, state]);
+  }, [canContinue, currentStep, state]);
 
   return (
     <div
@@ -671,83 +682,3 @@ function PrimaryAction({
     </button>
   );
 }
-
-function ProjectionCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-emerald-300/12 bg-black/18 p-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-      <strong className="mt-2 block text-base font-black text-white">{value}</strong>
-    </div>
-  );
-}
-
-function ActivationPotRow({
-  label,
-  helper,
-  value,
-  color,
-}: {
-  label: string;
-  helper: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-emerald-300/12 bg-white/[0.035] p-4">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className="text-base font-black text-white">{label}</p>
-          <small className="mt-1 block text-sm font-semibold leading-5 text-slate-400">{helper}</small>
-        </div>
-        <strong className="text-sm font-black text-emerald-200">{value}%</strong>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${value}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function DistributionBars({
-  distribution,
-  selected,
-}: {
-  distribution: OnboardingState["porcentagens"];
-  selected: boolean;
-}) {
-  return (
-    <div className="mt-6 grid gap-3">
-      <PlanRow label="Negócio" value={distribution.negocio} color="bg-emerald-400" animated={selected} />
-      <PlanRow label="Pessoal" value={distribution.pessoal} color="bg-sky-400" animated={selected} />
-      <PlanRow label="Reserva" value={distribution.reserva} color="bg-amber-300" animated={selected} />
-    </div>
-  );
-}
-
-function PlanRow({
-  label,
-  value,
-  color,
-  animated = true,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  animated?: boolean;
-}) {
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between text-sm font-bold">
-        <span className="text-slate-200">{label}</span>
-        <span className="text-emerald-200">{value}%</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div
-          className={`h-full rounded-full ${color} transition-all duration-500`}
-          style={{ width: animated ? `${value}%` : "0%" }}
-        />
-      </div>
-    </div>
-  );
-}
-

@@ -1,28 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
-  ArrowDownCircle,
   ArrowRight,
-  ArrowUpCircle,
   BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  CircleDollarSign,
   PieChart,
   ShieldAlert,
   Target,
-  WalletCards,
+  X,
 } from "lucide-react";
 
 import { useApp } from "@/contexts/AppContext";
+import MoneyValue from "@/components/ui/MoneyValue";
+import DashboardMoneyExplanationCards from "@/components/dashboard/shared/DashboardMoneyExplanationCards";
 import { getUserOnboardingData } from "@/lib/auth";
+import RecurrenceTodayCard from "@/components/dashboard/shared/RecurrenceTodayCard";
+import UpcomingCommitmentsCard from "@/components/dashboard/shared/UpcomingCommitmentsCard";
 import {
+  calculateRealAvailableByPot,
+  calculateIncomeProfitBreakdown,
   calculateTotals,
   getTransactionNetAmount,
+  getUpcomingCommitments,
   isInCurrentMonth,
   parseDateSafe,
 } from "@/lib/finance";
+import { readRecurrences, subscribeRecurrences, type Recurrence } from "@/lib/recurrences";
 import { generateProactiveInsights } from "@/lib/consultorInsights";
 import { PotType, TransactionType, type Transaction } from "@/lib/types";
 import type { DashboardIntelligence } from "@/lib/dashboardIntelligence";
@@ -59,6 +64,14 @@ type ProjectionPoint = {
   y: number;
   value: number;
   label: string;
+};
+
+type DashboardAlert = {
+  id: "separation" | "pricing" | "security" | "neutral";
+  title: string;
+  message: string;
+  tone: "warning" | "neutral";
+  tips: string[];
 };
 
 type EvolutionSeries = {
@@ -242,6 +255,14 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
   const [, setLocation] = useLocation();
   const [evolutionRange, setEvolutionRange] = useState<EvolutionRange>("7d");
   const [activeChartKey, setActiveChartKey] = useState<string | null>(null);
+  const [activeAlert, setActiveAlert] = useState<DashboardAlert | null>(null);
+  const [recurrences, setRecurrences] = useState<Recurrence[]>(() => readRecurrences(user?.id));
+
+  useEffect(() => {
+    const refresh = () => setRecurrences(readRecurrences(user?.id));
+    refresh();
+    return subscribeRecurrences(refresh);
+  }, [user?.id]);
 
   const onboardingData = useMemo(() => (user?.id ? getUserOnboardingData(user.id) : {}), [user?.id]);
   const realTransactions = useMemo(() => transactions.filter((tx) => !isOnboardingSeed(tx)), [transactions]);
@@ -296,9 +317,30 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     if (Number.isFinite(savedProjection) && savedProjection > 0) return savedProjection;
     return Number((estimatedGrossMonthlyRevenue / 22).toFixed(2));
   }, [estimatedGrossMonthlyRevenue, onboardingData.dailyRevenueTarget, onboardingData.projectedDailyGrossRevenue]);
-  const lucroLiquido = hasRealIncome ? Number((dashboardTotals.income - dashboardTotals.fees - dashboardCosts).toFixed(2)) : 0;
-  const personalFreeMoney = personalFreeMoneyDetails.personalFreeMoney;
-  const hasPersonalDeficit = personalFreeMoneyDetails.deficit > 0;
+  const incomeProfitBreakdown = useMemo(
+    () =>
+      calculateIncomeProfitBreakdown({
+        grossIncome: hasRealIncome ? dashboardTotals.income : 0,
+        fees: dashboardTotals.fees,
+        supplies: hasRealIncome ? dashboardCosts : 0,
+      }),
+    [dashboardCosts, dashboardTotals.fees, dashboardTotals.income, hasRealIncome]
+  );
+  const lucroLiquido = incomeProfitBreakdown.netProfit;
+  const upcomingCommitments = useMemo(
+    () =>
+      getUpcomingCommitments({
+        accounts: adjustmentAccounts,
+        recurrences,
+        today: new Date(),
+        daysWindow: 10,
+      }),
+    [adjustmentAccounts, recurrences]
+  );
+  const potAvailability = useMemo(
+    () => calculateRealAvailableByPot(pots, upcomingCommitments),
+    [pots, upcomingCommitments]
+  );
 
   const proactiveInsights = useMemo(
     () =>
@@ -345,6 +387,28 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       tone: "positive" as const,
     };
   }, [dashboardCosts, fixedCommitments, hasRealIncome, lucroLiquido, realPotBalances.reserve]);
+
+  const healthIndicators = useMemo(
+    () => [
+      {
+        label: "Entrada",
+        value: hasRealIncome ? "bruta registrada" : "sem registro",
+      },
+      {
+        label: "Lucro liquido",
+        value: !hasRealIncome ? "aguardando entrada" : lucroLiquido >= 0 ? "positivo" : "em atencao",
+      },
+      {
+        label: "Saidas",
+        value: dashboardTotals.expense > 0 ? "por pote" : "sem saidas",
+      },
+      {
+        label: "Reserva",
+        value: realPotBalances.reserve > 0 ? "separada" : "a construir",
+      },
+    ],
+    [dashboardTotals.expense, hasRealIncome, lucroLiquido, realPotBalances.reserve]
+  );
 
   const evolutionSeries = useMemo(() => {
     const latestTransactionDate = getLatestTransactionDate(realTransactions);
@@ -541,6 +605,56 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     return list;
   }, [hasAnyRealMovement, onboardingData.flag_separacao, onboardingData.focus]);
 
+  const dashboardAlerts = useMemo(() => {
+    const list: DashboardAlert[] = [];
+    if (onboardingData.flag_separacao) {
+      list.push({
+        id: "separation",
+        title: "Separacao ativada",
+        message: "Lembre de tirar sua parte sem misturar potes.",
+        tone: "warning",
+        tips: ["PF impacta apenas PF.", "PJ impacta apenas PJ.", "Reserva pede decisao clara."],
+      });
+    }
+    if (onboardingData.focus === "precificacao") {
+      list.push({
+        id: "pricing",
+        title: "Foco em precificacao",
+        message: "Acompanhe margem por servico.",
+        tone: "warning",
+        tips: [
+          "Lucro liquido define margem, nao faturamento.",
+          "Considere taxas e insumos antes do preco.",
+          lucroLiquido < 0 ? "Lucro liquido negativo pede revisao." : "Proteja margem antes de dar desconto.",
+          "Servico com baixa margem precisa de ajuste.",
+        ],
+      });
+    }
+    if (onboardingData.focus === "seguranca") {
+      list.push({
+        id: "security",
+        title: "Foco em seguranca",
+        message: "Fortaleca sua reserva.",
+        tone: "warning",
+        tips: [
+          "Reserva nao e sobra: e protecao.",
+          "Compromissos ficam separados por pote.",
+          realPotBalances.reserve > 0 ? "Sua reserva ja tem dinheiro separado." : "Comece pequeno e constante.",
+        ],
+      });
+    }
+    if (list.length === 0) {
+      list.push({
+        id: "neutral",
+        title: "Sem alerta critico",
+        message: hasAnyRealMovement ? "Continue registrando para manter clareza." : "Registre o primeiro movimento real.",
+        tone: "neutral",
+        tips: ["Entrada bruta vem antes das taxas.", "Lucro liquido e entrada - taxas - insumos.", "Saidas sao gastos por pote."],
+      });
+    }
+    return list;
+  }, [hasAnyRealMovement, lucroLiquido, onboardingData.flag_separacao, onboardingData.focus, realPotBalances.reserve]);
+
   const fluxMessage = !hasRealIncome
     ? "Registre sua primeira entrada para eu analisar seu dinheiro."
     : proactiveInsights[0]?.message ?? intelligence.greetingMessage;
@@ -558,7 +672,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
     });
   }, [dashboardTotals, dashboardTransactions.length, personalFreeMoneyDetails, realPotBalances, realTransactions]);
 
-  const summaryCards = [
+  /* const summaryCards = [
     {
       label: "Entradas",
       value: formatCurrency(dashboardTotals.income),
@@ -605,7 +719,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
       icon: PieChart,
       tone: "success",
     },
-  ];
+  ]; */
 
   return (
     <>
@@ -632,6 +746,15 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
               </div>
               <h3>{health.status}</h3>
               <p>{health.helper}</p>
+              <div className="fd-health-micro-grid">
+                {healthIndicators.map((item) => (
+                  <span key={item.label}>
+                    <small>{item.label}</small>
+                    <b>{item.value}</b>
+                  </span>
+                ))}
+              </div>
+              <p className="fd-health-lesson">Organizacao nao e quanto entra. E quanto sobra com direcao.</p>
               <strong>{hasRealIncome ? `${health.index}%` : "Em construção"}</strong>
               <div className="fd-health-bar">
                 <div style={{ width: `${health.index}%` }} />
@@ -658,23 +781,24 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
           </article>
         </div>
 
-        <section className="fd-home-summary-strip">
-          {summaryCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <article key={card.label} className={`fd-home-summary-card ${card.tone}`}>
-                <span>
-                  <Icon className="h-5 w-5" />
-                </span>
-                <div>
-                  <p>{card.label}</p>
-                  <h3>{card.value}</h3>
-                  <small>{card.helper}</small>
-                </div>
-              </article>
-            );
-          })}
-        </section>
+        <RecurrenceTodayCard compact />
+
+        <UpcomingCommitmentsCard
+          commitments={upcomingCommitments}
+          pots={pots}
+          onViewAll={() => setLocation("/ajustes")}
+          onConfigureRecurrences={() => setLocation("/recorrencias")}
+          onRegisterNow={() => setLocation("/financeiro")}
+          onViewPot={() => setLocation("/ajustes")}
+        />
+
+        <DashboardMoneyExplanationCards
+          grossIncome={incomeProfitBreakdown.grossIncome}
+          fees={incomeProfitBreakdown.fees}
+          netProfit={incomeProfitBreakdown.netProfit}
+          supplies={incomeProfitBreakdown.supplies}
+          potAvailability={potAvailability}
+        />
 
         <section className="fd-home-main-grid">
           <article className="fd-home-panel fd-home-chart-panel">
@@ -718,8 +842,8 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
             <div className="fd-home-donut-wrap">
               <div className="fd-home-donut" style={{ background: potDistributionChart.gradient }}>
                 <div>
-                  <span>Total real</span>
-                  <strong>{formatCurrency(potDistributionChart.total)}</strong>
+                  <span>Potes</span>
+                  <strong>PF/PJ/Reserva</strong>
                 </div>
               </div>
             </div>
@@ -729,7 +853,7 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
                   <span className="dot" style={{ background: entry.color }} />
                   <p>{entry.label}</p>
                   <strong>{entry.percent.toFixed(0)}%</strong>
-                  <small>{formatCurrency(entry.value)}</small>
+                  <small><MoneyValue value={formatCurrency(entry.value)} size="sm" /></small>
                 </div>
               ))}
             </div>
@@ -742,12 +866,15 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
                 <span>Hoje</span>
               </div>
               <div className="fd-home-alert-list">
-                {alerts.map((alert, index) => (
-                  <div key={`${alert}-${index}`} className={index === 0 && !hasRealIncome ? "neutral" : "warning"}>
+                {dashboardAlerts.map((alert) => (
+                  <button key={alert.id} type="button" className={alert.tone} onClick={() => setActiveAlert(alert)}>
                     <ShieldAlert className="h-5 w-5" />
-                    <p>{alert}</p>
+                    <p>
+                      <strong>{alert.title}</strong>
+                      <span>{alert.message}</span>
+                    </p>
                     <ChevronRight className="h-4 w-4" />
-                  </div>
+                  </button>
                 ))}
               </div>
             </article>
@@ -790,6 +917,46 @@ export default function InicioModule({ userName, intelligence }: InicioModulePro
         </footer>
       </section>
 
+      {activeAlert ? (
+        <div className="fd-alert-detail-backdrop" role="dialog" aria-modal="true" aria-label={activeAlert.title}>
+          <article className="fd-alert-detail-card">
+            <header>
+              <div>
+                <span>Alerta</span>
+                <h3>{activeAlert.title}</h3>
+              </div>
+              <button type="button" className="fd-icon-btn" onClick={() => setActiveAlert(null)} aria-label="Fechar alerta">
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <p>{activeAlert.message}</p>
+            <div className="fd-alert-detail-tips">
+              {activeAlert.tips.slice(0, 4).map((tip) => (
+                <span key={tip}>{tip}</span>
+              ))}
+            </div>
+            <footer>
+              <button type="button" className="fd-ghost-btn" onClick={() => setLocation("/financeiro")}>
+                Ir para financeiro
+              </button>
+              <button
+                type="button"
+                className="fd-ghost-btn"
+                onClick={() => {
+                  setActiveAlert(null);
+                  setLocation("/financeiro");
+                }}
+              >
+                Registrar agora
+              </button>
+              <button type="button" className="fd-primary-btn" onClick={() => setActiveAlert(null)}>
+                Entendi
+              </button>
+            </footer>
+          </article>
+        </div>
+      ) : null}
+
     </>
   );
 }
@@ -809,7 +976,7 @@ function FinancialEvolutionContent({
     { label: "Saídas", color: EVOLUTION_COLORS.expense },
     { label: "Reserva", color: EVOLUTION_COLORS.reserve },
     { label: "Previsão", color: EVOLUTION_COLORS.projection, dashed: true },
-  ];
+  ].filter((item) => item.color !== EVOLUTION_COLORS.projection);
   const summary = [
     { label: "Entradas", value: formatCurrency(series.periodTotals.income), tone: "success" },
     { label: "Saídas", value: formatCurrency(series.periodTotals.expense), tone: "danger" },
@@ -879,7 +1046,7 @@ function FinancialEvolutionContent({
 
       {activeRow ? (
         <div className="fd-evolution-tooltip">
-          <strong>{activeRow.label}</strong>
+          <strong>Data: {shortDateLabel(activeRow.date, true)}</strong>
           <span>Entradas: {formatCurrency(activeRow.income)}</span>
           <span>Saídas: {formatCurrency(activeRow.expense)}</span>
           <span>Reserva: {formatCurrency(activeRow.reserve)}</span>

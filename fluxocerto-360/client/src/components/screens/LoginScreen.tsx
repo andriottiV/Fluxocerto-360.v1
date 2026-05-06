@@ -115,67 +115,67 @@ export default function LoginScreen() {
 
   return (
     <div
-      className="min-h-screen overflow-x-hidden bg-[#020617] text-white antialiased"
+      className="fc-auth min-h-screen overflow-x-hidden bg-[#020617] text-white antialiased"
       style={{ fontFamily: '"Gotan", "Inter", "Montserrat", "Arial", sans-serif' }}
     >
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_12%,rgba(34,197,94,0.18),transparent_32%),radial-gradient(circle_at_82%_18%,rgba(16,185,129,0.12),transparent_28%),radial-gradient(circle_at_55%_110%,rgba(34,197,94,0.12),transparent_40%),linear-gradient(150deg,#020617_0%,#030b0a_52%,#020617_100%)]" />
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(rgba(34,197,94,0.12)_1px,transparent_1px)] bg-[size:30px_30px] opacity-[0.07]" />
 
-      <main className="relative z-10 grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(440px,560px)]">
-        <section className="hidden min-h-screen flex-col justify-between border-r border-emerald-300/10 px-10 py-10 lg:flex xl:px-16">
-          <div>
+      <main className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1440px] lg:grid-cols-[minmax(0,1fr)_minmax(450px,540px)]">
+        <section className="hidden min-h-screen flex-col justify-between gap-8 border-r border-emerald-300/10 px-10 py-8 lg:flex xl:px-14">
+          <div className="flex min-h-12 items-center">
             <BrandLogo
               variant="full"
-              className="h-10 w-auto object-contain drop-shadow-[0_0_18px_rgba(34,197,94,0.14)]"
+              className="h-11 w-auto min-w-[174px] max-w-[210px] object-contain drop-shadow-[0_0_18px_rgba(34,197,94,0.14)]"
             />
           </div>
 
-          <div className="max-w-[620px]">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-xs font-bold text-emerald-300">
+          <div className="max-w-[620px] py-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2.5 text-xs font-bold text-emerald-300 shadow-[0_0_24px_rgba(34,197,94,0.08)]">
               <ShieldCheck className="h-4 w-4" />
               Acesso seguro ao seu painel
             </div>
 
-            <h1 className="mt-7 text-[clamp(3.25rem,5.2vw,5rem)] font-black leading-[0.96] tracking-[-0.045em] text-white">
+            <h1 className="mt-6 max-w-[560px] text-[clamp(2.75rem,4.2vw,4.15rem)] font-black leading-[1.02] tracking-[-0.02em] text-white">
               Acesse seu controle financeiro.
             </h1>
 
-            <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
+            <p className="mt-5 max-w-[520px] text-base leading-7 text-slate-300">
               Entre para continuar organizando seu dinheiro pessoal e do negócio com clareza.
             </p>
 
-            <div className="mt-8 grid gap-4">
+            <div className="mt-7 grid gap-3.5">
               {["Separe pessoal e negócio", "Veja seu lucro real", "Tome decisões melhores"].map((benefit) => (
-                <div key={benefit} className="flex items-center gap-3 text-base font-bold text-slate-100">
-                  <span className="grid h-9 w-9 place-items-center rounded-full border border-emerald-300/20 bg-emerald-400/10">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+                <div key={benefit} className="flex min-w-0 items-center gap-3.5 text-sm font-bold leading-6 text-slate-100">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-emerald-300/20 bg-emerald-400/10">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-300" />
                   </span>
-                  {benefit}
+                  <span>{benefit}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="max-w-md rounded-3xl border border-emerald-300/12 bg-white/[0.035] p-5 text-sm leading-6 text-slate-300 backdrop-blur-xl">
+          <div className="max-w-lg rounded-3xl border border-emerald-300/12 bg-white/[0.04] p-5 text-sm leading-6 text-slate-300 shadow-[0_20px_54px_rgba(0,0,0,0.22)] backdrop-blur-xl">
             Seu acesso permanece protegido enquanto você acompanha fluxo, clientes, custos e decisões importantes do negócio.
           </div>
         </section>
 
-        <section className="flex min-h-screen items-center justify-center px-5 py-8 sm:px-8 lg:px-10">
+        <section className="flex min-h-screen items-center justify-center px-5 py-6 sm:px-8 lg:px-10">
           <div className="w-full max-w-[460px]">
-            <div className="mb-7 flex justify-center lg:hidden">
-              <BrandLogo variant="full" className="h-11 w-auto object-contain" />
+            <div className="mb-6 flex justify-center lg:hidden">
+              <BrandLogo variant="full" className="h-11 w-auto min-w-[172px] max-w-[220px] object-contain" />
             </div>
 
-            <div className="rounded-[28px] border border-emerald-300/14 bg-[#05110e]/76 p-6 shadow-[0_28px_80px_rgba(0,0,0,0.44),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl sm:p-8">
-              <div className="mb-7">
+            <div className="rounded-[28px] border border-emerald-300/14 bg-[#05110e]/78 p-6 shadow-[0_32px_90px_rgba(0,0,0,0.46),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl sm:p-7">
+              <div className="mb-6">
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300/90">
                   FluxoCerto 360
                 </p>
-                <h2 className="mt-3 text-3xl font-black leading-tight tracking-[-0.035em] text-white sm:text-4xl">
+                <h2 className="mt-3 text-2xl font-black leading-tight tracking-[-0.02em] text-white sm:text-3xl">
                   {title}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-400">{subtitle}</p>
+                <p className="mt-3 text-sm leading-6 text-slate-400">{subtitle}</p>
               </div>
 
               <form onSubmit={handleAuthSubmit} className="space-y-4">
